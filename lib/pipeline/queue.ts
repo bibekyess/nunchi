@@ -1,0 +1,262 @@
+import { ApiError, type TranslateRequest } from '@/lib/api-client';
+import type { Clip } from '@/lib/audio/vad';
+import type { SessionState } from '@/lib/store/session-store';
+import type { Lang, TranscriptionResult, TranslationContextItem, Utterance } from '@/lib/types';
+import { pickDirection } from './direction';
+import { hallucinationReason } from './hallucinations';
+import { buildWhisperPrompt } from './whisper-prompt';
+
+export const CONCURRENCY = 2;
+export const BACKOFF_MS = [1000, 3000];
+export const CONTEXT_LINES = 5;
+export const MAX_PENDING_CLIPS = 50; // ~15 MB of audio
+
+export interface QueueDeps {
+  getState: () => SessionState;
+  encode: (audio: Float32Array) => Blob;
+  transcribe: (
+    audio: Blob,
+    opts: { language: Lang | 'auto'; prompt?: string; signal?: AbortSignal },
+  ) => Promise<TranscriptionResult>;
+  translate: (
+    body: TranslateRequest,
+    onDelta: (delta: string) => void,
+    signal?: AbortSignal,
+  ) => Promise<string>;
+  newId: () => string;
+  sleep: (ms: number) => Promise<void>;
+  /** Resolves once the browser is online (immediately if it already is). */
+  waitForOnline: () => Promise<void>;
+}
+
+class Semaphore {
+  private waiting: (() => void)[] = [];
+  private active = 0;
+  constructor(private readonly size: number) {}
+
+  async run<T>(task: () => Promise<T>): Promise<T> {
+    if (this.active >= this.size) await new Promise<void>((r) => this.waiting.push(r));
+    this.active++;
+    try {
+      return await task();
+    } finally {
+      this.active--;
+      this.waiting.shift()?.();
+    }
+  }
+}
+
+const normalize = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+
+/**
+ * One job per utterance clip: transcribe → filter → translate (streamed). Jobs run with
+ * limited concurrency and may finish out of order; the UI always renders by `seq`.
+ */
+export class PipelineQueue {
+  private nextSeq = 0;
+  /** Audio is kept only until transcription succeeds, for retries. Never persisted. */
+  private readonly clips = new Map<string, Clip>();
+  private readonly transcribeSlots = new Semaphore(CONCURRENCY);
+  private readonly translateSlots = new Semaphore(CONCURRENCY);
+  private readonly abort = new AbortController();
+
+  constructor(private readonly deps: QueueDeps) {
+    const ids = deps.getState().ids;
+    const byId = deps.getState().byId;
+    // Continue numbering after anything already in the session.
+    this.nextSeq = ids.length ? byId[ids[ids.length - 1]].seq + 1 : 0;
+  }
+
+  get pendingClips() {
+    return this.clips.size;
+  }
+
+  enqueue(clip: Clip): string {
+    const { session, addUtterance } = this.deps.getState();
+    const id = this.deps.newId();
+    addUtterance({
+      id,
+      sessionId: session?.id ?? '',
+      seq: this.nextSeq++,
+      startedAt: clip.startedAt,
+      durationMs: clip.durationMs,
+      status: 'transcribing',
+    });
+    this.clips.set(id, clip);
+    this.evictOldClips();
+    void this.runTranscribe(id);
+    return id;
+  }
+
+  /** Retry a failed utterance from wherever it failed. */
+  retry(id: string) {
+    const u = this.deps.getState().byId[id];
+    if (!u || u.status !== 'error') return;
+    if (this.clips.has(id)) void this.runTranscribe(id);
+    else if (u.sourceText && u.sourceLang && u.targetLang) void this.runTranslate(id);
+  }
+
+  retryAllFailed() {
+    const { ids, byId } = this.deps.getState();
+    for (const id of ids) if (byId[id].status === 'error') this.retry(id);
+  }
+
+  failedCount(): number {
+    const { ids, byId } = this.deps.getState();
+    return ids.filter((id) => byId[id].status === 'error').length;
+  }
+
+  canRetry(id: string): boolean {
+    const u = this.deps.getState().byId[id];
+    return Boolean(u && (this.clips.has(id) || u.sourceText));
+  }
+
+  dispose() {
+    this.abort.abort();
+    this.clips.clear();
+  }
+
+  private get signal() {
+    return this.abort.signal;
+  }
+
+  private patch(id: string, patch: Partial<Utterance>) {
+    if (!this.signal.aborted) this.deps.getState().patchUtterance(id, patch);
+  }
+
+  private fail(id: string, err: unknown) {
+    if (this.signal.aborted || (err as Error)?.name === 'AbortError') return;
+    if (err instanceof ApiError && err.status === 401)
+      this.deps.getState().setNeedsAccessToken(true);
+    const message = err instanceof ApiError ? err.message : 'Something went wrong';
+    this.patch(id, { status: 'error', error: message });
+  }
+
+  /** Runs `attempt` with retries for network/5xx errors, waiting for connectivity first. */
+  private async withRetries<T>(attempt: () => Promise<T>): Promise<T> {
+    for (let i = 0; ; i++) {
+      await this.deps.waitForOnline();
+      try {
+        return await attempt();
+      } catch (err) {
+        const retryable = err instanceof ApiError && err.retryable;
+        if (!retryable || i >= BACKOFF_MS.length || this.signal.aborted) throw err;
+        await this.deps.sleep(BACKOFF_MS[i]);
+      }
+    }
+  }
+
+  private evictOldClips() {
+    while (this.clips.size > MAX_PENDING_CLIPS) {
+      const oldest = this.clips.keys().next().value as string;
+      this.clips.delete(oldest);
+      this.patch(oldest, {
+        status: 'error',
+        error: 'Dropped: too many clips waiting for the network',
+      });
+    }
+  }
+
+  private previousSource(seq: number): string | undefined {
+    const { ids, byId } = this.deps.getState();
+    for (let i = ids.length - 1; i >= 0; i--) {
+      const u = byId[ids[i]];
+      if (u.seq < seq && u.sourceText && u.status !== 'skipped') return u.sourceText;
+    }
+    return undefined;
+  }
+
+  private context(seq: number): TranslationContextItem[] {
+    const { ids, byId } = this.deps.getState();
+    const items: TranslationContextItem[] = [];
+    for (let i = ids.length - 1; i >= 0 && items.length < CONTEXT_LINES; i--) {
+      const u = byId[ids[i]];
+      if (u.seq < seq && u.status === 'done' && u.sourceText && u.translation) {
+        items.unshift({ source: u.sourceText, translation: u.translation });
+      }
+    }
+    return items;
+  }
+
+  private async runTranscribe(id: string) {
+    const clip = this.clips.get(id);
+    const state = this.deps.getState();
+    const u = state.byId[id];
+    if (!clip || !u || !state.session) return;
+    this.patch(id, { status: 'transcribing', error: undefined });
+
+    const { mode, glossary } = state.session;
+    let result: TranscriptionResult;
+    try {
+      const audio = this.deps.encode(clip.audio);
+      result = await this.transcribeSlots.run(() =>
+        this.withRetries(() =>
+          this.deps.transcribe(audio, {
+            language: mode.source,
+            prompt: buildWhisperPrompt(glossary, this.previousSource(u.seq)),
+            signal: this.signal,
+          }),
+        ),
+      );
+    } catch (err) {
+      this.fail(id, err);
+      return;
+    }
+    if (this.signal.aborted) return;
+    this.clips.delete(id); // transcription succeeded; audio is no longer needed
+
+    const reason = hallucinationReason({
+      result,
+      clipDurationMs: clip.durationMs,
+      previousText: this.previousSource(u.seq),
+    });
+    if (reason) {
+      this.patch(id, { status: 'skipped', sourceText: result.text || undefined });
+      return;
+    }
+
+    const { sourceLang, targetLang } = pickDirection(
+      this.deps.getState().session?.mode ?? mode,
+      result.language,
+    );
+    this.patch(id, { sourceText: result.text, sourceLang, targetLang, status: 'translating' });
+    await this.runTranslate(id);
+  }
+
+  private async runTranslate(id: string) {
+    const state = this.deps.getState();
+    const u = state.byId[id];
+    if (!u?.sourceText || !u.sourceLang || !u.targetLang || !state.session) return;
+    this.patch(id, { status: 'translating', translation: '', error: undefined });
+
+    const body: TranslateRequest = {
+      text: u.sourceText,
+      sourceLang: u.sourceLang,
+      targetLang: u.targetLang,
+      context: this.context(u.seq),
+      glossary: state.session.glossary,
+      meetingContext: state.session.meetingContext,
+    };
+    const append = (delta: string) => {
+      if (!this.signal.aborted) this.deps.getState().appendTranslation(id, delta);
+    };
+    const streamOnce = (request: TranslateRequest) =>
+      this.withRetries(async () => {
+        this.patch(id, { translation: '' }); // a retried stream starts over
+        return this.deps.translate(request, append, this.signal);
+      });
+
+    try {
+      let text = await this.translateSlots.run(() => streamOnce(body));
+      const untranslated =
+        text.trim() === '' ||
+        (u.sourceLang !== u.targetLang && normalize(text) === normalize(u.sourceText));
+      if (untranslated) {
+        text = await this.translateSlots.run(() => streamOnce({ ...body, retry: true }));
+      }
+      this.patch(id, { status: 'done', translation: text.trim() });
+    } catch (err) {
+      this.fail(id, err);
+    }
+  }
+}

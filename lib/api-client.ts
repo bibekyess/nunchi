@@ -1,0 +1,137 @@
+import type {
+  ApiErrorBody,
+  GlossaryEntry,
+  Lang,
+  TranscriptionResult,
+  TranslationContextItem,
+} from './types';
+
+const TOKEN_KEY = 'nunchi.accessToken';
+export const ACCESS_TOKEN_HEADER = 'x-nunchi-token';
+
+export function getAccessToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setAccessToken(token: string | null) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // storage unavailable
+  }
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getAccessToken();
+  return token ? { [ACCESS_TOKEN_HEADER]: token } : {};
+}
+
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number, // 0 = network failure
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+
+  /** Network failures, timeouts and 5xx are worth retrying; 4xx are not. */
+  get retryable() {
+    return this.status === 0 || this.status === 408 || this.status === 429 || this.status >= 500;
+  }
+}
+
+async function toApiError(res: Response): Promise<ApiError> {
+  try {
+    const body = (await res.json()) as ApiErrorBody;
+    return new ApiError(res.status, body.error.code, body.error.message);
+  } catch {
+    return new ApiError(res.status, 'http_error', `Request failed (${res.status})`);
+  }
+}
+
+async function send(url: string, init: RequestInit): Promise<Response> {
+  let res: Response;
+  try {
+    res = await fetch(url, { ...init, headers: { ...authHeaders(), ...init.headers } });
+  } catch (err) {
+    if ((err as Error)?.name === 'AbortError') throw err;
+    throw new ApiError(0, 'network', 'Network error');
+  }
+  if (!res.ok) throw await toApiError(res);
+  return res;
+}
+
+export async function transcribeClip(
+  audio: Blob,
+  opts: { language: Lang | 'auto'; prompt?: string; signal?: AbortSignal },
+): Promise<TranscriptionResult> {
+  const form = new FormData();
+  form.append('audio', audio, 'clip.wav');
+  form.append('language', opts.language);
+  if (opts.prompt) form.append('prompt', opts.prompt);
+  const res = await send('/api/transcribe', { method: 'POST', body: form, signal: opts.signal });
+  return (await res.json()) as TranscriptionResult;
+}
+
+export interface TranslateRequest {
+  text: string;
+  sourceLang: Lang;
+  targetLang: Lang;
+  context: TranslationContextItem[];
+  glossary: GlossaryEntry[];
+  meetingContext?: string;
+  /** Second attempt: the server answers deterministically (temperature 0). */
+  retry?: boolean;
+}
+
+/** Streams the translation, calling onDelta for each piece. Resolves with the full text. */
+export async function translateStream(
+  body: TranslateRequest,
+  onDelta: (delta: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const res = await send('/api/translate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.body) return '';
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let full = '';
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const text = decoder.decode(value, { stream: true });
+      if (text) {
+        full += text;
+        onDelta(text);
+      }
+    }
+  } catch (err) {
+    if ((err as Error)?.name === 'AbortError') throw err;
+    throw new ApiError(0, 'stream_interrupted', 'Translation stream was interrupted');
+  }
+  const tail = decoder.decode();
+  if (tail) {
+    full += tail;
+    onDelta(tail);
+  }
+  return full;
+}
+
+export type HealthStatus = { speaches: 'ok' | 'error'; llm: 'ok' | 'error' };
+
+export async function fetchHealth(): Promise<HealthStatus> {
+  const res = await send('/api/health', { cache: 'no-store' });
+  return (await res.json()) as HealthStatus;
+}

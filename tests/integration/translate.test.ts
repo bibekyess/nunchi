@@ -87,6 +87,18 @@ describe('POST /api/translate', () => {
     expect(calls[1].stream).toBeFalsy();
   });
 
+  it('uses temperature 0 for a client retry', async () => {
+    let temperature: unknown;
+    server.use(
+      http.post(`${LLM}/chat/completions`, async ({ request }) => {
+        temperature = ((await request.json()) as Record<string, unknown>).temperature;
+        return chatStream(['Yes.']);
+      }),
+    );
+    await (await POST(request({ ...body, retry: true }))).text();
+    expect(temperature).toBe(0);
+  });
+
   it('returns a JSON 502 when the LLM rejects the request', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     server.use(

@@ -24,6 +24,8 @@ const bodySchema = z.object({
     .max(200)
     .default([]),
   meetingContext: z.string().max(1000).optional(),
+  /** Second attempt after an empty or untranslated result: answer deterministically. */
+  retry: z.boolean().optional(),
 });
 
 const MAX_TOKENS = 400;
@@ -64,13 +66,15 @@ export async function POST(request: Request) {
           model: env.LLM_MODEL,
           messages,
           stream: true,
-          temperature: 0.2,
+          temperature: parsed.data.retry ? 0 : 0.2,
           max_tokens: MAX_TOKENS,
           ...VLLM_NO_THINKING,
         },
         { signal: request.signal },
       );
     } catch (err) {
+      // The client went away (stopped, navigated); nothing to report.
+      if (request.signal.aborted) return new Response(null, { status: 499 });
       throw toUpstreamError(err);
     }
 
