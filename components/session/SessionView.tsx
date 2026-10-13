@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import { GlossaryDialog } from '../controls/GlossaryDialog';
 import { LanguageMenu } from '../controls/LanguageMenu';
-import { MicSettingsDialog } from '../controls/MicSettingsDialog';
+import { AudioSettingsDialog } from '../controls/AudioSettingsDialog';
 import { RecordBar } from '../controls/RecordBar';
 import { TranscriptList } from '../transcript/TranscriptList';
 import { IconButton } from '../ui';
@@ -23,11 +23,11 @@ function Toolbar() {
       <IconButton label="Glossary" onClick={() => setDialog('glossary')}>
         <BookText className="h-5 w-5" aria-hidden />
       </IconButton>
-      <IconButton label="Microphone settings" onClick={() => setDialog('mic')}>
+      <IconButton label="Audio settings" onClick={() => setDialog('mic')}>
         <Mic className="h-5 w-5" aria-hidden />
       </IconButton>
       {dialog === 'glossary' && <GlossaryDialog open onClose={() => setDialog(null)} />}
-      {dialog === 'mic' && <MicSettingsDialog open onClose={() => setDialog(null)} />}
+      {dialog === 'mic' && <AudioSettingsDialog open onClose={() => setDialog(null)} />}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import {
   savedNoiseSuppression,
 } from './audio/devices';
 import { SpeechRecorder } from './audio/vad';
+import { loadVadSettings, type VadSettings } from './audio/vad-settings';
 import { encodeWav } from './audio/wav';
 import { PipelineQueue } from './pipeline/queue';
 import { sessionStore } from './store/session-store';
@@ -63,7 +64,7 @@ export class SessionController {
         track.addEventListener('ended', this.onTrackEnded);
       }
       try {
-        this.recorder = await SpeechRecorder.create(stream, {
+        this.recorder = await SpeechRecorder.create(stream, loadVadSettings(), {
           onClip: (clip) => this.queue.enqueue(clip),
           onLevel: (level) => {
             this.lastFrameAt = performance.now();
@@ -127,6 +128,11 @@ export class SessionController {
   /** Re-applies mic settings (device, noise suppression) to a running recorder. */
   async applyMicSettings() {
     if (this.recorder && this.store.recorder === 'listening') await this.restart();
+  }
+
+  /** Speech detection settings apply live, without reopening the input. */
+  applyVadSettings(settings: VadSettings) {
+    this.recorder?.updateSettings(settings);
   }
 
   dispose() {

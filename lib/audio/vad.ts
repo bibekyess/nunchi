@@ -1,16 +1,9 @@
 import type { MicVAD } from '@ricky0123/vad-web';
+import { toMicVadOptions, type VadSettings } from './vad-settings';
 import { frameLevel, samplesToMs } from './wav';
 
 const ASSET_PATH = '/vad/';
 
-/** Starting values from the plan; tuned in Phase 2. */
-export const VAD_SETTINGS = {
-  positiveSpeechThreshold: 0.5,
-  negativeSpeechThreshold: 0.35,
-  preSpeechPadMs: 300,
-  redemptionMs: 600, // Korean speakers pause mid-sentence; lower = choppier, higher = more lag
-  minSpeechMs: 400, // ignore coughs/clicks; "네." still passes
-};
 export const MAX_UTTERANCE_MS = 25_000; // Whisper's hard limit is 30 s
 
 export interface Clip {
@@ -43,6 +36,7 @@ export class SpeechRecorder {
 
   static async create(
     stream: MediaStream,
+    settings: VadSettings,
     callbacks: SpeechRecorderCallbacks,
   ): Promise<SpeechRecorder> {
     const recorder = new SpeechRecorder(stream, callbacks);
@@ -56,7 +50,7 @@ export class SpeechRecorder {
         ort.env.logLevel = 'error';
         ort.env.wasm.numThreads = 1; // threads need cross-origin isolation; one is plenty for VAD
       },
-      ...VAD_SETTINGS,
+      ...toMicVadOptions(settings),
       submitUserSpeechOnPause: true,
       startOnLoad: false,
       getStream: async () => stream,
@@ -77,6 +71,11 @@ export class SpeechRecorder {
   /** True when the browser killed the mic (tab hidden, phone locked, device unplugged). */
   get streamEnded(): boolean {
     return this.stream.getAudioTracks().every((t) => t.readyState === 'ended');
+  }
+
+  /** Applies new detection settings immediately, without touching the stream. */
+  updateSettings(settings: VadSettings) {
+    this.vad?.setOptions(toMicVadOptions(settings));
   }
 
   async start() {
