@@ -1,0 +1,86 @@
+import 'server-only';
+import { normalizeWhisperLanguage, type Lang } from '@/lib/languages';
+import type { TranscriptionResult } from '@/lib/types';
+import { getEnv } from './env';
+import { isTimeoutError, UpstreamError } from './http';
+
+const TRANSCRIBE_TIMEOUT_MS = 30_000;
+
+function authHeaders(): Record<string, string> {
+  const key = getEnv().SPEACHES_API_KEY;
+  return key ? { Authorization: `Bearer ${key}` } : {};
+}
+
+interface VerboseJson {
+  text?: string;
+  language?: string;
+  duration?: number;
+  segments?: { text?: string; no_speech_prob?: number; avg_logprob?: number }[];
+}
+
+export interface TranscribeOptions {
+  language?: Lang; // omit for auto-detect
+  prompt?: string;
+  signal?: AbortSignal;
+}
+
+export async function transcribe(
+  audio: Blob,
+  opts: TranscribeOptions = {},
+): Promise<TranscriptionResult> {
+  const env = getEnv();
+  const form = new FormData();
+  form.append('file', audio, 'clip.wav');
+  form.append('model', env.SPEACHES_MODEL);
+  if (opts.language) form.append('language', opts.language);
+  if (opts.prompt) form.append('prompt', opts.prompt);
+  form.append('temperature', '0');
+  form.append('response_format', 'verbose_json');
+
+  const timeout = AbortSignal.timeout(TRANSCRIBE_TIMEOUT_MS);
+  const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
+
+  let res: Response;
+  try {
+    res = await fetch(`${env.SPEACHES_BASE_URL}/audio/transcriptions`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: form,
+      signal,
+    });
+  } catch (err) {
+    if (timeout.aborted || isTimeoutError(err)) {
+      throw new UpstreamError('speaches', 'upstream_timeout', undefined);
+    }
+    throw new UpstreamError('speaches', 'upstream_error', undefined, String(err));
+  }
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new UpstreamError('speaches', 'upstream_error', res.status, detail);
+  }
+
+  const data = (await res.json()) as VerboseJson;
+  return {
+    text: (data.text ?? '').trim(),
+    language: normalizeWhisperLanguage(data.language),
+    durationMs: Math.round((data.duration ?? 0) * 1000),
+    segments: (data.segments ?? []).map((s) => ({
+      text: (s.text ?? '').trim(),
+      noSpeechProb: s.no_speech_prob ?? 0,
+      avgLogprob: s.avg_logprob ?? 0,
+    })),
+  };
+}
+
+export async function pingSpeaches(timeoutMs = 5_000): Promise<boolean> {
+  try {
+    const res = await fetch(`${getEnv().SPEACHES_BASE_URL}/models`, {
+      headers: authHeaders(),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
