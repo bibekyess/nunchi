@@ -85,6 +85,18 @@ LAN address on the phone (accept the self-signed certificate), or use a tunnel.
 `pnpm install` copies the VAD model and ONNX runtime into `public/vad/` (git-ignored); they load
 only when you first tap the microphone (~16 MB, cached afterwards).
 
+## Docker
+
+```bash
+cp .env.example .env.local   # fill in the real server URLs, model and header
+docker compose up -d --build
+```
+
+The app listens on `127.0.0.1:9083` (set `PORT` to change the host port). Put an HTTPS reverse
+proxy such as nginx in front: browsers only allow the microphone over HTTPS (or on `localhost`).
+The env file is read at container start, never baked into the image. After editing it, run
+`docker compose up -d` again to recreate the container.
+
 ## API
 
 All routes return errors as `{ error: { code, message } }` and require the `x-nunchi-token`
