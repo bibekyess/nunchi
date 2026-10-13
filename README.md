@@ -24,6 +24,15 @@ The implementation plan lives in the shared plan doc; decisions made while build
   source picker: microphone, **tab audio** (video calls, YouTube), or both mixed. Still to run
   the Phase 2 acceptance check (10-minute sample: no junk lines, glossary names ≥ 90 % right, no
   line over 30 s) against the real servers.
+- **Phase 3 — sessions: done for what's needed (verified against mocks).** Sessions are saved
+  on the device (IndexedDB via Dexie) as you go, and come back after a reload or crash; lines
+  that were still in flight show as failed, and interrupted translations can be retried. The
+  home page lists recent sessions (title, date, listening time, first translated line) with
+  rename and delete. A **Summary** tab streams an AI summary (overview, key points, decisions,
+  action items, open questions) in Korean or English, rendered as GFM markdown, and saves it
+  with the session. Search, Markdown export, Copy all and the installable PWA were left out
+  on purpose: the goal is following Korean meetings, not archiving or sharing them.
+- **Phases 4–5 (speaker labels, share links, server storage): not planned for now.**
 
 ## Setup
 
@@ -59,7 +68,7 @@ pnpm smoke           # terminal 3
 
 The browser tests (`pnpm e2e`) start the mock and the built app themselves (set
 `E2E_MOCK_PORT` if 8788 is taken). They cover the live session, the view filter, text size,
-side-by-side layout, and tab-audio capture (Chromium's fake capture UI auto-accepts the share). It uses Playwright's
+side-by-side layout, reload recovery, the summary tab, the recent-sessions list, and tab-audio capture (Chromium's fake capture UI auto-accepts the share). It uses Playwright's
 Chromium, or the one at `PLAYWRIGHT_CHROMIUM_PATH` if set. The speech fixture is the public-domain
 JFK sample from whisper.cpp.
 
@@ -88,3 +97,6 @@ header when `APP_ACCESS_TOKEN` is set. Upstream error bodies are logged, never f
 - `POST /api/translate` (JSON: `text, sourceLang, targetLang, context[≤5], glossary, meetingContext?`)
   → streamed `text/plain`. Qwen thinking is disabled via `chat_template_kwargs`, and any
   `<think>` block is stripped anyway. An empty result is retried once at temperature 0.
+- `POST /api/summarize` (JSON: `utterances[{ seq, sourceText, translation? }]` ≤ 5000,
+  `glossary, meetingContext?, outputLang`) → streamed markdown. Transcripts over ~24k
+  characters are summarized in parts (two at a time) and the parts merged into one summary.

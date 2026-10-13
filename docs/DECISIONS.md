@@ -2,6 +2,31 @@
 
 Changes to, or details not covered by, the implementation plan. Newest first.
 
+## 2026-10-13 — Phase 3
+
+- **Scope cut to what helps follow a meeting:** on-device sessions, the recent list and the
+  summary. Search, Markdown export, Copy all and the PWA manifest were dropped; Phases 4–5
+  (speaker labels, share links, server persistence) are not planned. No database server:
+  everything lives in the browser's IndexedDB.
+- **Saving:** a store subscriber (`lib/db/persist.ts`) writes changed utterances. Settled
+  ones (done / skipped / error) are written within the same tick; streaming translation
+  updates are batched every second; `pagehide` flushes the rest. A session is first written
+  with its first utterance, so opening and leaving an empty session leaves nothing behind.
+  If IndexedDB is unavailable (some private windows) the session still works, unsaved.
+- **Crash recovery:** on load, utterances still `transcribing` become errors without retry
+  (audio is never stored); `translating` ones become errors that retry from the saved source
+  text. The queue is created after loading, so new lines continue the saved `seq`.
+- **Listening time is saved as `Session.durationMs`** (pauses excluded) and restores the
+  header timer; `endedAt` is set when recording stops.
+- **Summary language** defaults to the session's target language and is remembered as
+  `Session.summaryLang`. Long transcripts: parts of ≤ 24k characters are summarized without
+  streaming (two at a time, 800 tokens each), then a merge prompt is streamed. LLM calls
+  for summaries get a 3-minute timeout instead of the client's 60 s.
+- **Markdown rendering:** `react-markdown` + `remark-gfm` (`singleTilde: false`) inside
+  Tailwind Typography `prose` classes, so action items render as task-list checkboxes.
+- **Transcript and Summary tabs stay mounted** (hidden, not unmounted), so the transcript keeps
+  its scroll position and a summary keeps streaming while the other tab is open.
+
 ## 2026-10-13 — Phase 2
 
 - **The view filter is by language, not by role** (matches Cuckoo's "All languages" menu):
