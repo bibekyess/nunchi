@@ -41,3 +41,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# copied from node_modules on postinstall
+/public/vad/
+/test-results/
+/playwright-report/
