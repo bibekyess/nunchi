@@ -70,5 +70,12 @@ test('live session: speech becomes ordered bilingual blocks', async ({ page }) =
   await expect(page.getByRole('button', { name: 'Start listening' })).toBeVisible();
 
   await page.screenshot({ path: 'test-results/session.png', fullPage: false });
+
+  // Phase 3: the session is saved on the device and survives a reload.
+  const savedSeqs = await done.evaluateAll((els) => els.map((e) => e.getAttribute('data-seq')));
+  const firstTranslation = await first.locator('.translation-text').textContent();
+  await page.reload();
+  await expect(done).toHaveCount(savedSeqs.length, { timeout: 10_000 });
+  await expect(done.first().locator('.translation-text')).toHaveText(firstTranslation!);
   expect(consoleErrors.filter((e) => !e.includes('favicon'))).toEqual([]);
 });

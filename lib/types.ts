@@ -34,6 +34,8 @@ export interface Session {
   title: string; // default: "YYYYMMDD Meeting"
   createdAt: number;
   endedAt?: number;
+  /** Time spent listening, excluding pauses. */
+  durationMs?: number;
   mode: TranslationMode;
   glossary: GlossaryEntry[];
   meetingContext?: string;

@@ -25,6 +25,8 @@ export interface SessionState {
 
   // Session
   startSession: (id: string) => void;
+  /** Loads a saved session (Phase 3); in-flight utterances must already be recovered. */
+  hydrateSession: (session: Session, utterances: Utterance[]) => void;
   setTitle: (title: string) => void;
   setMode: (mode: TranslationMode) => void;
   setGlossary: (glossary: GlossaryEntry[], meetingContext?: string) => void;
@@ -75,6 +77,24 @@ export function defaultTitle(date = new Date()): string {
   return `${y}${m}${d} Meeting`;
 }
 
+/** Listening time so far, including the current stretch. */
+export function elapsedMs(
+  s: Pick<SessionState, 'listenedMs' | 'listeningSince'>,
+  now = Date.now(),
+): number {
+  return s.listenedMs + (s.listeningSince !== null ? Math.max(0, now - s.listeningSince) : 0);
+}
+
+const RESET_RECORDER = {
+  recorder: 'idle',
+  recorderError: null,
+  listeningSince: null,
+  micLevel: 0,
+  speaking: false,
+  interrupted: false,
+  sharingStopped: false,
+} as const;
+
 export const useSessionStore = create<SessionState>()((set, get) => ({
   session: null,
   ids: [],
@@ -101,14 +121,19 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
       },
       ids: [],
       byId: {},
-      recorder: 'idle',
-      recorderError: null,
-      listeningSince: null,
       listenedMs: 0,
-      micLevel: 0,
-      speaking: false,
-      interrupted: false,
-      sharingStopped: false,
+      ...RESET_RECORDER,
+    });
+  },
+
+  hydrateSession: (session, utterances) => {
+    const sorted = [...utterances].sort((a, b) => a.seq - b.seq);
+    set({
+      session,
+      ids: sorted.map((u) => u.id),
+      byId: Object.fromEntries(sorted.map((u) => [u.id, u])),
+      listenedMs: session.durationMs ?? 0,
+      ...RESET_RECORDER,
     });
   },
 
@@ -156,7 +181,10 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
           : s.listenedMs;
       const listeningSince =
         recorder === 'listening' ? (wasListening ? s.listeningSince : now) : null;
-      return { recorder, recorderError: error, listenedMs, listeningSince };
+      const stopped =
+        recorder === 'idle' && (s.recorder === 'listening' || s.recorder === 'paused');
+      const session = stopped && s.session ? { ...s.session, endedAt: now } : s.session;
+      return { recorder, recorderError: error, listenedMs, listeningSince, session };
     }),
   setMicLevel: (micLevel) => {
     // Avoid re-rendering the meter for imperceptible changes.
