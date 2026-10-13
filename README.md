@@ -16,6 +16,14 @@ The implementation plan lives in the shared plan doc; decisions made while build
   context, auto-scroll with a jump button, wake lock and interruption recovery, offline queueing,
   passcode prompt when `APP_ACCESS_TOKEN` is set. Still to check on real phones (iOS Safari,
   Android Chrome) against the real servers.
+- **Phase 2 — quality: built; verified against mocks, tab sharing checked by hand in Chrome.** Cuckoo-style toolbar: an "All languages"
+  filter (All / 한국어 / English — filters by language, not by original vs. translation), a
+  side-by-side layout with one column per language (≥ 768 px), and a text-size button (S/M/L).
+  These are remembered per device. The **Audio** settings (header ⋯ menu) add live-tuned speech detection
+  (pause before a line ends 0.3–1.2 s, sensitivity, shortest speech), and on desktop Chrome a
+  source picker: microphone, **tab audio** (video calls, YouTube), or both mixed. Still to run
+  the Phase 2 acceptance check (10-minute sample: no junk lines, glossary names ≥ 90 % right, no
+  line over 30 s) against the real servers.
 
 ## Setup
 
@@ -49,7 +57,9 @@ pnpm dev:mock        # terminal 2
 pnpm smoke           # terminal 3
 ```
 
-The browser test (`pnpm e2e`) starts the mock and the built app itself. It uses Playwright's
+The browser tests (`pnpm e2e`) start the mock and the built app themselves (set
+`E2E_MOCK_PORT` if 8788 is taken). They cover the live session, the view filter, text size,
+side-by-side layout, and tab-audio capture (Chromium's fake capture UI auto-accepts the share). It uses Playwright's
 Chromium, or the one at `PLAYWRIGHT_CHROMIUM_PATH` if set. The speech fixture is the public-domain
 JFK sample from whisper.cpp.
 

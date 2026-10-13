@@ -2,6 +2,38 @@
 
 Changes to, or details not covered by, the implementation plan. Newest first.
 
+## 2026-10-13 — Phase 2
+
+- **The view filter is by language, not by role** (matches Cuckoo's "All languages" menu):
+  All languages / 한국어 / English. Picking English shows English speakers' originals and Korean
+  speakers' translations, so it reads as one English transcript; the plan's Both / Original /
+  Translation was dropped. With one language picked, every visible line uses the large style.
+  Translation still runs for hidden lines (export and summary need both).
+- **Side-by-side means one column per language** (한국어 left, English right) rather than
+  original | translation, so each column stays one language when speakers alternate. Only with
+  "All languages" and at ≥ 768 px; narrower screens stack.
+- **Toolbar follows the Cuckoo screenshot:** filter pill + layout toggle on the left; translation
+  direction (now a round icon over a native select) and text size (one tap: S → M → L) on the
+  right, leaving room for Phase 3 search and Phase 4 ✨. Glossary and Audio settings moved
+  to the header ⋯ menu that the plan described. Flags are inline SVG, because flag emoji don't
+  render on Windows.
+- **Display preferences** live in a separate Zustand store with `persist` (`nunchi.display`),
+  not in the session: they are per device and will also drive the Phase 5 viewer.
+- **Speech detection settings apply live** through vad-web's `MicVAD.setOptions`, with no restart.
+  The dialog's Cancel button undoes them. Sensitivity sets `positiveSpeechThreshold` 0.3–0.8 with
+  `negativeSpeechThreshold` 0.15 below (Silero's convention). Pre-speech pad stays fixed at 300 ms
+  and the 25 s force-split is unchanged.
+- **Tab audio:** `getDisplayMedia({ video: true, audio })` (Chrome won't offer audio without
+  video). The video track is stopped at once, and tab audio is captured with echo cancellation, noise
+  suppression and AGC off. "Tab + microphone" mixes both through a `MediaStreamDestination`.
+  It is offered only where `navigator.userAgentData` exists and is not mobile, which means desktop Chromium.
+  Safari and Firefox implement `getDisplayMedia` without audio. Whole-system audio needs an
+  entire-screen share and only works on Windows / ChromeOS.
+- **"Stop sharing" pauses instead of restarting**: re-sharing needs a new picker and a user
+  gesture, so a banner offers "Share again". Closing the picker without sharing is not an error.
+- **`PLAN.md` is in `.prettierignore`**: it's the user's working copy of the plan and must not
+  be reformatted.
+
 ## 2026-10-13 — Phase 1
 
 - **We own the mic stream, not MicVAD.** `getStream`/`pauseStream`/`resumeStream` hand MicVAD a
