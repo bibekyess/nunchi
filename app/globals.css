@@ -4,14 +4,8 @@
   --background: #ffffff;
   --foreground: #171717;
   --muted: #6b7280;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-muted: var(--muted);
-  --font-sans:
-    'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', system-ui, -apple-system, sans-serif;
+  --line: #e5e7eb;
+  --subtle: #f1f2f4;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -19,11 +13,76 @@
     --background: #0a0a0a;
     --foreground: #ededed;
     --muted: #9ca3af;
+    --line: #27272a;
+    --subtle: #1c1c1f;
   }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-subtle: var(--subtle);
+  --font-sans:
+    'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', system-ui, -apple-system, sans-serif;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Transcript: original small and muted, translation large (Cuckoo layout). */
+.source-text {
+  font-size: 0.9375rem; /* 15px */
+  line-height: 1.45;
+}
+.translation-text {
+  font-size: 1.3125rem; /* 21px */
+  line-height: 1.45;
+  word-break: keep-all; /* don't split Korean words mid-word */
+  overflow-wrap: anywhere;
+}
+.source-text {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.caret {
+  display: inline-block;
+  width: 0.5ch;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.1em;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.35;
+  animation: caret-pulse 1s ease-in-out infinite;
+}
+
+.shimmer {
+  background: linear-gradient(90deg, var(--subtle) 25%, var(--line) 50%, var(--subtle) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+@keyframes caret-pulse {
+  50% {
+    opacity: 0.1;
+  }
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caret,
+  .shimmer {
+    animation: none;
+  }
 }

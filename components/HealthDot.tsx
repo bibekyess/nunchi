@@ -1,44 +1,51 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { fetchHealth, type HealthStatus } from '@/lib/api-client';
+import { cx } from './ui';
 
-type Status = 'ok' | 'error';
-type Health = { speaches: Status; llm: Status } | { failed: true } | null;
+type Health = HealthStatus | { failed: true } | null;
 
-export function HealthDot() {
+const REFRESH_MS = 60_000;
+
+export function HealthDot({ compact = false }: { compact?: boolean }) {
   const [health, setHealth] = useState<Health>(null);
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/health', { cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : { failed: true }))
-      .catch(() => ({ failed: true }))
-      .then((h) => !cancelled && setHealth(h));
+    const check = () =>
+      fetchHealth()
+        .catch(() => ({ failed: true as const }))
+        .then((h) => !cancelled && setHealth(h));
+    void check();
+    const timer = setInterval(check, REFRESH_MS);
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
   }, []);
 
+  const down =
+    health !== null && ('failed' in health || health.speaches !== 'ok' || health.llm !== 'ok');
   const label =
     health === null
       ? 'Checking servers…'
       : 'failed' in health
         ? 'Server check failed'
-        : health.speaches === 'ok' && health.llm === 'ok'
+        : !down
           ? 'Servers ready'
           : `Speech ${health.speaches === 'ok' ? 'ok' : 'down'} · Translation ${health.llm === 'ok' ? 'ok' : 'down'}`;
 
-  const color =
-    health === null
-      ? 'bg-gray-400'
-      : 'failed' in health || health.speaches !== 'ok' || health.llm !== 'ok'
-        ? 'bg-red-500'
-        : 'bg-green-500';
-
   return (
-    <span className="inline-flex items-center gap-2 text-sm text-muted" role="status">
-      <span className={`h-2.5 w-2.5 rounded-full ${color}`} aria-hidden />
-      {label}
+    <span className="inline-flex items-center gap-2 text-sm text-muted" role="status" title={label}>
+      <span
+        className={cx(
+          'h-2.5 w-2.5 rounded-full',
+          health === null ? 'bg-gray-400' : down ? 'bg-red-500' : 'bg-green-500',
+        )}
+        aria-hidden
+      />
+      <span className={compact ? 'sr-only' : undefined}>{label}</span>
     </span>
   );
 }
