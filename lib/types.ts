@@ -40,6 +40,7 @@ export interface Session {
   glossary: GlossaryEntry[];
   meetingContext?: string;
   summary?: string; // markdown
+  summaryLang?: Lang; // language the summary is written in
 }
 
 export interface GlossaryEntry {

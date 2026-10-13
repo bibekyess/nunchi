@@ -5,7 +5,8 @@
 // Behaviour:
 //   GET  /v1/models                 -> model list
 //   POST /v1/audio/transcriptions   -> canned Korean sentence (or English if language=en)
-//   POST /v1/chat/completions       -> streamed canned translation, preceded by an empty
+//   POST /v1/chat/completions       -> streamed canned translation (or a canned markdown
+//                                      summary for summary prompts), preceded by an empty
 //                                      <think></think> block split across chunks, like Qwen3
 // Set MOCK_HEADER_NAME/MOCK_HEADER_VALUE to require the custom LLM auth header.
 // Set MOCK_LATENCY_MS to add delay (default 150).
@@ -31,6 +32,22 @@ const TRANSLATIONS = {
   'Is the translation working well?': '번역 잘 되고 있나요?',
   'Thanks everyone for coming today.': '오늘 와 주셔서 모두 감사합니다.',
 };
+
+/** Canned markdown summary that mentions how many transcript lines it saw. */
+function mockSummary(user) {
+  const lines = (user.match(/^\[\d+\] /gm) ?? []).length;
+  return [
+    '## Overview',
+    `The team opened the meeting and confirmed Kiro as a sponsor (${lines} lines).`,
+    '',
+    '## Key points',
+    '- Kiro is sponsoring the meetup.',
+    '- Live translation is being checked.',
+    '',
+    '## Action items',
+    '- [ ] Kiro: confirm sponsorship details',
+  ].join('\n');
+}
 
 let counter = 0;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -116,9 +133,12 @@ async function handle(req, res) {
     }
     const body = JSON.parse((await readBody(req)).toString('utf8'));
     const user = body.messages?.at(-1)?.content ?? '';
+    const system = body.messages?.[0]?.content ?? '';
     const current = user.split('CURRENT line:\n')[1]?.trim() ?? '';
-    const answer =
-      TRANSLATIONS[current] ?? (/[가-힣]/.test(current) ? `[EN] ${current}` : `[KO] ${current}`);
+    const answer = /meeting transcripts|partial summaries/.test(system)
+      ? mockSummary(user)
+      : (TRANSLATIONS[current] ??
+        (/[가-힣]/.test(current) ? `[EN] ${current}` : `[KO] ${current}`));
 
     if (!body.stream) {
       return json(res, 200, {

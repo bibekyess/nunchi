@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { MODE_PRESETS } from '@/lib/pipeline/direction';
-import type { GlossaryEntry, Session, TranslationMode, Utterance } from '@/lib/types';
+import type { GlossaryEntry, Lang, Session, TranslationMode, Utterance } from '@/lib/types';
 
 export type RecorderState = 'idle' | 'starting' | 'listening' | 'paused' | 'error';
 
@@ -30,6 +30,7 @@ export interface SessionState {
   setTitle: (title: string) => void;
   setMode: (mode: TranslationMode) => void;
   setGlossary: (glossary: GlossaryEntry[], meetingContext?: string) => void;
+  setSummary: (summary: string | undefined, summaryLang?: Lang) => void;
 
   // Utterances. Every change goes through these two, so it can later be persisted (Phase 3)
   // and relayed to share viewers (Phase 5).
@@ -143,6 +144,19 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
     saveLastGlossary({ glossary, meetingContext });
     set((s) => (s.session ? { session: { ...s.session, glossary, meetingContext } } : {}));
   },
+
+  setSummary: (summary, summaryLang) =>
+    set((s) =>
+      s.session
+        ? {
+            session: {
+              ...s.session,
+              summary,
+              summaryLang: summaryLang ?? s.session.summaryLang,
+            },
+          }
+        : {},
+    ),
 
   addUtterance: (u) =>
     set((s) => {

@@ -91,18 +91,12 @@ export interface TranslateRequest {
   retry?: boolean;
 }
 
-/** Streams the translation, calling onDelta for each piece. Resolves with the full text. */
-export async function translateStream(
-  body: TranslateRequest,
+/** Reads a plain-text streamed response, calling onDelta for each piece. Resolves with the full text. */
+async function readTextStream(
+  res: Response,
   onDelta: (delta: string) => void,
-  signal?: AbortSignal,
+  what: string,
 ): Promise<string> {
-  const res = await send('/api/translate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal,
-  });
   if (!res.body) return '';
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -119,7 +113,7 @@ export async function translateStream(
     }
   } catch (err) {
     if ((err as Error)?.name === 'AbortError') throw err;
-    throw new ApiError(0, 'stream_interrupted', 'Translation stream was interrupted');
+    throw new ApiError(0, 'stream_interrupted', `${what} stream was interrupted`);
   }
   const tail = decoder.decode();
   if (tail) {
@@ -127,6 +121,43 @@ export async function translateStream(
     onDelta(tail);
   }
   return full;
+}
+
+/** Streams the translation, calling onDelta for each piece. Resolves with the full text. */
+export async function translateStream(
+  body: TranslateRequest,
+  onDelta: (delta: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const res = await send('/api/translate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  });
+  return readTextStream(res, onDelta, 'Translation');
+}
+
+export interface SummarizeRequest {
+  utterances: { seq: number; sourceText: string; translation?: string }[];
+  glossary: GlossaryEntry[];
+  meetingContext?: string;
+  outputLang: Lang;
+}
+
+/** Streams the markdown summary. Resolves with the full text. */
+export async function summarizeStream(
+  body: SummarizeRequest,
+  onDelta: (delta: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const res = await send('/api/summarize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  });
+  return readTextStream(res, onDelta, 'Summary');
 }
 
 export type HealthStatus = { speaches: 'ok' | 'error'; llm: 'ok' | 'error' };

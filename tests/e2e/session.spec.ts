@@ -78,6 +78,20 @@ test('live session: speech becomes ordered bilingual blocks', async ({ page }) =
   await expect(done).toHaveCount(savedSeqs.length, { timeout: 10_000 });
   await expect(done.first().locator('.translation-text')).toHaveText(firstTranslation!);
 
+  // Summary: streamed markdown (GFM task list), saved with the session.
+  await page.getByRole('tab', { name: 'Summary' }).click();
+  await page.getByRole('button', { name: 'Generate summary' }).click();
+  const summary = page.getByTestId('summary');
+  await expect(summary.getByRole('heading', { name: 'Overview' })).toBeVisible();
+  await expect(summary.getByRole('checkbox')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Regenerate' })).toBeEnabled();
+  await page.screenshot({ path: 'test-results/summary.png' });
+  await page.reload();
+  await page.getByRole('tab', { name: 'Summary' }).click();
+  await expect(summary.getByRole('heading', { name: 'Overview' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Transcript' }).click();
+  await expect(done.first()).toBeVisible();
+
   // Home lists it with its first translated line; rename and delete work.
   await page.getByRole('link', { name: 'Home' }).click();
   const row = page.getByTestId('recent-session');
