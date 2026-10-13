@@ -41,6 +41,8 @@ export function Banners() {
   const controller = useController();
   const interrupted = useSessionStore((s) => s.interrupted);
   const setInterrupted = useSessionStore((s) => s.setInterrupted);
+  const sharingStopped = useSessionStore((s) => s.sharingStopped);
+  const setSharingStopped = useSessionStore((s) => s.setSharingStopped);
   const needsToken = useSessionStore((s) => s.needsAccessToken);
   const setNeedsToken = useSessionStore((s) => s.setNeedsAccessToken);
   const failed = useSessionStore((s) => s.ids.filter((id) => s.byId[id].status === 'error').length);
@@ -69,6 +71,12 @@ export function Banners() {
       {interrupted && (
         <Banner onDismiss={() => setInterrupted(false)}>
           <span>Listening was interrupted and has restarted. Some speech may be missing.</span>
+        </Banner>
+      )}
+      {sharingStopped && (
+        <Banner onDismiss={() => setSharingStopped(false)}>
+          <span>Tab sharing stopped, so listening is paused.</span>
+          <Button onClick={() => void controller.resume()}>Share again</Button>
         </Banner>
       )}
       {needsToken && (

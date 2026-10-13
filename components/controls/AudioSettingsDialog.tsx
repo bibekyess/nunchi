@@ -9,6 +9,12 @@ import {
   type InputDevice,
 } from '@/lib/audio/devices';
 import {
+  canCaptureTabAudio,
+  saveAudioSource,
+  savedAudioSource,
+  type AudioSource,
+} from '@/lib/audio/sources';
+import {
   DEFAULT_VAD_SETTINGS,
   loadVadSettings,
   saveVadSettings,
@@ -16,7 +22,17 @@ import {
   type VadSettings,
 } from '@/lib/audio/vad-settings';
 import { useController } from '../session/controller-context';
-import { Button, Dialog } from '../ui';
+import { Button, cx, Dialog } from '../ui';
+
+const SOURCES: { id: AudioSource; label: string; hint: string }[] = [
+  { id: 'mic', label: 'Microphone', hint: 'People speaking in the room.' },
+  {
+    id: 'tab',
+    label: 'Tab audio',
+    hint: 'A video call or video in another tab. Chrome asks which tab to share.',
+  },
+  { id: 'mix', label: 'Tab + microphone', hint: 'Both, e.g. a call where you also speak.' },
+];
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -79,6 +95,8 @@ const sensitivityLabel = (threshold: number) =>
 
 export function AudioSettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const controller = useController();
+  const tabSupported = canCaptureTabAudio();
+  const [source, setSource] = useState(savedAudioSource);
   const [devices, setDevices] = useState<InputDevice[]>([]);
   const [deviceId, setDeviceId] = useState(() => savedDeviceId() ?? '');
   const [noise, setNoise] = useState(savedNoiseSuppression);
@@ -105,14 +123,17 @@ export function AudioSettingsDialog({ open, onClose }: { open: boolean; onClose:
 
   const save = async () => {
     saveVadSettings(vad);
+    const sourceChanged = source !== savedAudioSource();
     const noiseChanged = noise !== savedNoiseSuppression();
     const deviceChanged = deviceId !== (savedDeviceId() ?? '');
+    saveAudioSource(source);
     saveNoiseSuppression(noise);
     onClose();
     if (deviceChanged) await controller.switchDevice(deviceId || undefined);
-    else if (noiseChanged) await controller.applyMicSettings();
+    else if (sourceChanged || noiseChanged) await controller.applyMicSettings();
   };
 
+  const usesMic = source !== 'tab';
   const unlabeled = devices.length > 0 && devices.every((d) => d.label.startsWith('Microphone '));
 
   return (
@@ -131,42 +152,79 @@ export function AudioSettingsDialog({ open, onClose }: { open: boolean; onClose:
         </>
       }
     >
-      <Section title="Microphone">
-        <label className="block text-sm font-medium" htmlFor="mic-device">
-          Input
-        </label>
-        <select
-          id="mic-device"
-          value={deviceId}
-          onChange={(e) => setDeviceId(e.target.value)}
-          className="mt-1 min-h-11 w-full rounded-lg border border-line bg-background px-3 text-base"
-        >
-          <option value="">System default</option>
-          {devices.map((d) => (
-            <option key={d.deviceId} value={d.deviceId}>
-              {d.label}
-            </option>
-          ))}
-        </select>
-        {unlabeled && (
-          <p className="mt-1 text-sm text-muted">Start listening once to see microphone names.</p>
-        )}
+      {tabSupported && (
+        <Section title="Listen to">
+          <div role="radiogroup" aria-label="Audio source" className="flex flex-col gap-1">
+            {SOURCES.map((s) => (
+              <label
+                key={s.id}
+                className={cx(
+                  'flex min-h-11 cursor-pointer items-start gap-3 rounded-lg px-3 py-2',
+                  source === s.id && 'bg-subtle',
+                )}
+              >
+                <input
+                  type="radio"
+                  name="audio-source"
+                  value={s.id}
+                  checked={source === s.id}
+                  onChange={() => setSource(s.id)}
+                  className="mt-1 h-5 w-5 accent-current"
+                />
+                <span>
+                  <span className="block text-sm font-medium">{s.label}</span>
+                  <span className="block text-sm text-muted">{s.hint}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+          {source !== 'mic' && (
+            <p className="mt-2 text-sm text-muted">
+              Turn on “Also share tab audio” in Chrome’s share window. Sharing the entire screen
+              captures all computer sound on Windows and ChromeOS only.
+            </p>
+          )}
+        </Section>
+      )}
 
-        <label className="mt-4 flex min-h-11 items-center justify-between gap-4">
-          <span>
-            <span className="block text-sm font-medium">Noise suppression</span>
-            <span className="block text-sm text-muted">
-              Turn off if quiet speakers get cut off.
+      {usesMic && (
+        <Section title="Microphone">
+          <label className="block text-sm font-medium" htmlFor="mic-device">
+            Input
+          </label>
+          <select
+            id="mic-device"
+            value={deviceId}
+            onChange={(e) => setDeviceId(e.target.value)}
+            className="mt-1 min-h-11 w-full rounded-lg border border-line bg-background px-3 text-base"
+          >
+            <option value="">System default</option>
+            {devices.map((d) => (
+              <option key={d.deviceId} value={d.deviceId}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+          {unlabeled && (
+            <p className="mt-1 text-sm text-muted">Start listening once to see microphone names.</p>
+          )}
+
+          <label className="mt-4 flex min-h-11 items-center justify-between gap-4">
+            <span>
+              <span className="block text-sm font-medium">Noise suppression</span>
+              <span className="block text-sm text-muted">
+                Turn off if quiet speakers get cut off.
+              </span>
             </span>
-          </span>
-          <input
-            type="checkbox"
-            checked={noise}
-            onChange={(e) => setNoise(e.target.checked)}
-            className="h-6 w-6 accent-current"
-          />
-        </label>
-      </Section>
+            <input
+              type="checkbox"
+              checked={noise}
+              onChange={(e) => setNoise(e.target.checked)}
+              className="h-6 w-6 accent-current"
+            />
+          </label>
+        </Section>
+      )}
 
       <Section title="Speech detection">
         <Slider

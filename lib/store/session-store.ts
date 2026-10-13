@@ -19,6 +19,8 @@ export interface SessionState {
   micLevel: number;
   speaking: boolean;
   interrupted: boolean;
+  /** The user stopped sharing the tab whose audio we were transcribing. */
+  sharingStopped: boolean;
   needsAccessToken: boolean;
 
   // Session
@@ -38,6 +40,7 @@ export interface SessionState {
   setMicLevel: (level: number) => void;
   setSpeaking: (speaking: boolean) => void;
   setInterrupted: (interrupted: boolean) => void;
+  setSharingStopped: (stopped: boolean) => void;
   setNeedsAccessToken: (needs: boolean) => void;
 }
 
@@ -83,6 +86,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
   micLevel: 0,
   speaking: false,
   interrupted: false,
+  sharingStopped: false,
   needsAccessToken: false,
 
   startSession: (id) => {
@@ -104,6 +108,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
       micLevel: 0,
       speaking: false,
       interrupted: false,
+      sharingStopped: false,
     });
   },
 
@@ -159,6 +164,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
   },
   setSpeaking: (speaking) => set({ speaking }),
   setInterrupted: (interrupted) => set({ interrupted }),
+  setSharingStopped: (sharingStopped) => set({ sharingStopped }),
   setNeedsAccessToken: (needsAccessToken) => set({ needsAccessToken }),
 }));
 

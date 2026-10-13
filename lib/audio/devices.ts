@@ -37,7 +37,14 @@ export async function listInputDevices(): Promise<InputDevice[]> {
     .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Microphone ${i + 1}` }));
 }
 
-export type MicErrorKind = 'denied' | 'no-device' | 'insecure' | 'unsupported' | 'other';
+export type MicErrorKind =
+  | 'denied'
+  | 'no-device'
+  | 'insecure'
+  | 'unsupported'
+  | 'cancelled' // the user closed the tab-share picker
+  | 'no-tab-audio' // a tab was shared without its audio
+  | 'other';
 
 export class MicError extends Error {
   constructor(

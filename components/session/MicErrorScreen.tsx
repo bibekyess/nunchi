@@ -20,6 +20,8 @@ function help(kind: string): string {
       return 'Connect a microphone, or close other apps that are using it, then try again.';
     case 'insecure':
       return 'Open nunchi over HTTPS. Browsers only allow the microphone on secure pages.';
+    case 'no-tab-audio':
+      return 'In the share window, pick a tab and turn on “Also share tab audio”. To capture the whole computer, share the entire screen with “Also share system audio” (Windows and ChromeOS).';
     case 'unsupported':
       return 'Use a recent version of Safari, Chrome, Edge or Firefox.';
     default:

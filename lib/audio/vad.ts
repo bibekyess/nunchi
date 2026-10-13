@@ -20,8 +20,8 @@ export interface SpeechRecorderCallbacks {
 }
 
 /**
- * Wraps MicVAD around a stream we own, so pausing never stops the tracks (no new permission
- * prompt on resume) and long monologues can be force-split.
+ * Wraps MicVAD around a stream the caller opened and closes, so pausing never stops the tracks
+ * (no new permission prompt on resume) and long monologues can be force-split.
  */
 export class SpeechRecorder {
   private vad: MicVAD | null = null;
@@ -29,17 +29,14 @@ export class SpeechRecorder {
   private splitTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly t0 = performance.now();
 
-  private constructor(
-    private readonly stream: MediaStream,
-    private readonly callbacks: SpeechRecorderCallbacks,
-  ) {}
+  private constructor(private readonly callbacks: SpeechRecorderCallbacks) {}
 
   static async create(
     stream: MediaStream,
     settings: VadSettings,
     callbacks: SpeechRecorderCallbacks,
   ): Promise<SpeechRecorder> {
-    const recorder = new SpeechRecorder(stream, callbacks);
+    const recorder = new SpeechRecorder(callbacks);
     // Loaded lazily: the model + WASM are ~16 MB and only needed once recording starts.
     const { MicVAD } = await import('@ricky0123/vad-web');
     recorder.vad = await MicVAD.new({
@@ -62,15 +59,6 @@ export class SpeechRecorder {
       onSpeechEnd: (audio) => recorder.handleSpeechEnd(audio),
     });
     return recorder;
-  }
-
-  get mediaStream(): MediaStream {
-    return this.stream;
-  }
-
-  /** True when the browser killed the mic (tab hidden, phone locked, device unplugged). */
-  get streamEnded(): boolean {
-    return this.stream.getAudioTracks().every((t) => t.readyState === 'ended');
   }
 
   /** Applies new detection settings immediately, without touching the stream. */
@@ -97,7 +85,6 @@ export class SpeechRecorder {
       // already torn down
     }
     this.vad = null;
-    this.stream.getTracks().forEach((t) => t.stop());
     this.callbacks.onLevel?.(0);
   }
 
