@@ -3,19 +3,10 @@
 import { ChevronLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { useSessionStore } from '@/lib/store/session-store';
+import { formatElapsed } from '@/lib/format';
+import { elapsedMs, useSessionStore } from '@/lib/store/session-store';
 import { HealthDot } from '../HealthDot';
 import { SessionMenu } from './SessionMenu';
-
-function formatElapsed(ms: number) {
-  const s = Math.floor(ms / 1000);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  const mm = String(m).padStart(2, '0');
-  const ss = String(sec).padStart(2, '0');
-  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
-}
 
 function ElapsedTimer() {
   const since = useSessionStore((s) => s.listeningSince);
@@ -26,7 +17,7 @@ function ElapsedTimer() {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, [since]);
-  const elapsed = before + (since !== null ? Math.max(0, now - since) : 0);
+  const elapsed = elapsedMs({ listenedMs: before, listeningSince: since }, now);
   return <span className="text-sm text-muted tabular-nums">{formatElapsed(elapsed)}</span>;
 }
 

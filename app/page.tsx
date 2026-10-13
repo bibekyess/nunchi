@@ -1,4 +1,5 @@
 import { HealthDot } from '@/components/HealthDot';
+import { RecentSessions } from '@/components/home/RecentSessions';
 import { NewSessionButton } from '@/components/NewSessionButton';
 
 export default function Home() {
@@ -12,9 +13,7 @@ export default function Home() {
         Live Korean ↔ English transcription and translation for meetings.
       </p>
       <NewSessionButton />
-      <p className="text-sm text-muted">
-        Saved sessions arrive in a later update; for now a session lives until you leave the page.
-      </p>
+      <RecentSessions />
     </main>
   );
 }

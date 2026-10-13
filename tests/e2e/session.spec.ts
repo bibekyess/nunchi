@@ -77,5 +77,20 @@ test('live session: speech becomes ordered bilingual blocks', async ({ page }) =
   await page.reload();
   await expect(done).toHaveCount(savedSeqs.length, { timeout: 10_000 });
   await expect(done.first().locator('.translation-text')).toHaveText(firstTranslation!);
+
+  // Home lists it with its first translated line; rename and delete work.
+  await page.getByRole('link', { name: 'Home' }).click();
+  const row = page.getByTestId('recent-session');
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText(firstTranslation!);
+  await row.getByRole('button', { name: /^Edit / }).click();
+  await page.getByLabel('Title').fill('Weekly sync');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(row).toContainText('Weekly sync');
+  await page.screenshot({ path: 'test-results/home.png' });
+  await row.getByRole('button', { name: /^Edit / }).click();
+  await page.getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('button', { name: 'Delete' }).click();
+  await expect(row).toHaveCount(0);
   expect(consoleErrors.filter((e) => !e.includes('favicon'))).toEqual([]);
 });
