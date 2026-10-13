@@ -1,33 +1,33 @@
 'use client';
 
-import { BookText, Mic } from 'lucide-react';
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
-import { GlossaryDialog } from '../controls/GlossaryDialog';
+import { selectColumns, useDisplayStore } from '@/lib/store/display-store';
+import { LayoutToggle, TextSizeButton } from '../controls/DisplayButtons';
 import { LanguageMenu } from '../controls/LanguageMenu';
-import { AudioSettingsDialog } from '../controls/AudioSettingsDialog';
 import { RecordBar } from '../controls/RecordBar';
+import { ViewFilterMenu } from '../controls/ViewFilterMenu';
 import { TranscriptList } from '../transcript/TranscriptList';
-import { IconButton } from '../ui';
+import { cx } from '../ui';
 import { Banners } from './Banners';
 import { SessionControllerProvider } from './controller-context';
 import { MicErrorScreen } from './MicErrorScreen';
 import { SessionHeader } from './SessionHeader';
 
+/** Cuckoo-style toolbar: what to show on the left, reading controls on the right. */
 function Toolbar() {
-  const [dialog, setDialog] = useState<'glossary' | 'mic' | null>(null);
+  const columns = useDisplayStore(selectColumns);
   return (
-    <div className="flex items-center gap-2 px-3 py-2">
-      <LanguageMenu />
+    <div
+      className={cx(
+        'mx-auto flex w-full max-w-3xl items-center gap-2 px-3 py-2',
+        columns && 'md:max-w-5xl',
+      )}
+    >
+      <ViewFilterMenu />
+      <LayoutToggle />
       <div className="flex-1" />
-      <IconButton label="Glossary" onClick={() => setDialog('glossary')}>
-        <BookText className="h-5 w-5" aria-hidden />
-      </IconButton>
-      <IconButton label="Audio settings" onClick={() => setDialog('mic')}>
-        <Mic className="h-5 w-5" aria-hidden />
-      </IconButton>
-      {dialog === 'glossary' && <GlossaryDialog open onClose={() => setDialog(null)} />}
-      {dialog === 'mic' && <AudioSettingsDialog open onClose={() => setDialog(null)} />}
+      <LanguageMenu />
+      <TextSizeButton />
     </div>
   );
 }

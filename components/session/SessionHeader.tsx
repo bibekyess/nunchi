@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useSessionStore } from '@/lib/store/session-store';
 import { HealthDot } from '../HealthDot';
+import { SessionMenu } from './SessionMenu';
 
 function formatElapsed(ms: number) {
   const s = Math.floor(ms / 1000);
@@ -52,6 +53,7 @@ export function SessionHeader() {
       <span className="px-2">
         <HealthDot compact />
       </span>
+      <SessionMenu />
     </header>
   );
 }

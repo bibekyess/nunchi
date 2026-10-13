@@ -2,7 +2,11 @@
 
 import { ArrowDown } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { LANG_CODES, SUPPORTED_LANGS } from '@/lib/languages';
+import { selectColumns, useDisplayStore } from '@/lib/store/display-store';
 import { useSessionStore } from '@/lib/store/session-store';
+import { LangFlag } from '../LangFlag';
+import { cx } from '../ui';
 import { UtteranceBlock } from './UtteranceBlock';
 
 /** Within this many px of the bottom counts as "at the bottom". */
@@ -19,6 +23,8 @@ export function TranscriptList() {
     return last ? `${s.byId[last].status}:${s.byId[last].translation?.length ?? 0}` : '';
   });
   const recorder = useSessionStore((s) => s.recorder);
+  const textSize = useDisplayStore((s) => s.textSize);
+  const columns = useDisplayStore(selectColumns);
 
   const scroller = useRef<HTMLDivElement>(null);
   const [following, setFollowing] = useState(true);
@@ -39,7 +45,7 @@ export function TranscriptList() {
 
   useLayoutEffect(() => {
     if (followingRef.current) scrollToBottom();
-  }, [ids.length, lastText, scrollToBottom]);
+  }, [ids.length, lastText, textSize, columns, scrollToBottom]);
 
   // Keep following when the viewport resizes (mobile keyboard, rotation).
   useEffect(() => {
@@ -56,11 +62,16 @@ export function TranscriptList() {
         className="h-full overflow-y-auto overscroll-contain px-1 pb-6"
         aria-live="polite"
         aria-relevant="additions"
+        data-size={textSize}
+        data-layout={columns ? 'columns' : 'stacked'}
       >
         {visibleCount === 0 ? (
           <EmptyState recording={recorder === 'listening'} />
         ) : (
-          <div className="mx-auto flex max-w-3xl flex-col gap-1 pt-2">
+          <div
+            className={cx('mx-auto flex max-w-3xl flex-col gap-1 pt-2', columns && 'md:max-w-5xl')}
+          >
+            {columns && <ColumnHeaders />}
             {ids.map((id) => (
               <UtteranceBlock key={id} id={id} />
             ))}
@@ -81,6 +92,20 @@ export function TranscriptList() {
           <ArrowDown className="h-5 w-5" aria-hidden />
         </button>
       )}
+    </div>
+  );
+}
+
+/** Column titles for the side-by-side layout (wide screens only). */
+function ColumnHeaders() {
+  return (
+    <div className="sticky top-0 z-[1] hidden grid-cols-2 gap-6 bg-background px-3 py-2 text-sm font-medium text-muted md:grid">
+      {LANG_CODES.slice(0, 2).map((l) => (
+        <span key={l} className="flex items-center gap-2">
+          <LangFlag lang={l} />
+          {SUPPORTED_LANGS[l].nativeName}
+        </span>
+      ))}
     </div>
   );
 }

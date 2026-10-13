@@ -3,6 +3,8 @@ import { defineConfig, devices } from '@playwright/test';
 // Smoke test: real Chromium with a fake microphone playing tests/fixtures/speech-en.wav,
 // against the production build and the mock upstreams. Run `pnpm build` first.
 const PORT = 3100;
+// Override when 8788 is taken on this machine.
+const MOCK_PORT = process.env.E2E_MOCK_PORT ?? '8788';
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -26,15 +28,15 @@ export default defineConfig({
   webServer: [
     {
       command: 'node scripts/mock-upstreams.mjs',
-      env: { MOCK_PORT: '8788', MOCK_HEADER_NAME: 'x-mock-auth', MOCK_HEADER_VALUE: 'mock-secret' },
-      url: 'http://localhost:8788/v1/models',
+      env: { MOCK_PORT, MOCK_HEADER_NAME: 'x-mock-auth', MOCK_HEADER_VALUE: 'mock-secret' },
+      url: `http://localhost:${MOCK_PORT}/v1/models`,
       reuseExistingServer: false,
     },
     {
       command: `node node_modules/next/dist/bin/next start -p ${PORT}`,
       env: {
-        SPEACHES_BASE_URL: 'http://localhost:8788/v1',
-        LLM_BASE_URL: 'http://localhost:8788/v1',
+        SPEACHES_BASE_URL: `http://localhost:${MOCK_PORT}/v1`,
+        LLM_BASE_URL: `http://localhost:${MOCK_PORT}/v1`,
         LLM_MODEL: 'mock-qwen',
         LLM_HEADER_NAME: 'x-mock-auth',
         LLM_HEADER_VALUE: 'mock-secret',

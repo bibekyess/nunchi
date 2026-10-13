@@ -35,20 +35,37 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Transcript: original small and muted, translation large (Cuckoo layout). */
+/* Transcript: original small and muted, translation large (Cuckoo layout).
+   The text-size button sets data-size on the transcript scroller. */
+:root {
+  --source-size: 0.9375rem; /* 15px */
+  --translation-size: 1.3125rem; /* 21px */
+}
+[data-size='s'] {
+  --source-size: 0.8125rem; /* 13px */
+  --translation-size: 1.125rem; /* 18px */
+}
+[data-size='l'] {
+  --source-size: 1.0625rem; /* 17px */
+  --translation-size: 1.625rem; /* 26px */
+}
 .source-text {
-  font-size: 0.9375rem; /* 15px */
+  font-size: var(--source-size);
   line-height: 1.45;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 .translation-text {
-  font-size: 1.3125rem; /* 21px */
+  font-size: var(--translation-size);
   line-height: 1.45;
   word-break: keep-all; /* don't split Korean words mid-word */
   overflow-wrap: anywhere;
 }
-.source-text {
-  word-break: keep-all;
-  overflow-wrap: anywhere;
+/* Side by side, both languages read at the same size; the original stays muted. */
+@media (min-width: 48rem) {
+  [data-layout='columns'] .source-text {
+    font-size: var(--translation-size);
+  }
 }
 
 .caret {

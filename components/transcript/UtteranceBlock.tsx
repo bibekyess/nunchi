@@ -2,6 +2,9 @@
 
 import { Copy, RotateCw } from 'lucide-react';
 import { memo, useState } from 'react';
+import { visibleParts } from '@/lib/display/view';
+import { LANG_CODES, type Lang } from '@/lib/languages';
+import { selectColumns, useDisplayStore } from '@/lib/store/display-store';
 import { useSessionStore } from '@/lib/store/session-store';
 import { useController } from '../session/controller-context';
 import { cx } from '../ui';
@@ -11,9 +14,18 @@ function placeholderWidth(durationMs: number) {
   return `${Math.min(100, 25 + durationMs / 150)}%`;
 }
 
+/** Side-by-side: each language keeps its own column (static class names for Tailwind). */
+const COLUMN_CLASS = ['md:col-start-1', 'md:col-start-2'];
+function columnOf(lang: Lang | undefined, fallback: number) {
+  const i = lang ? LANG_CODES.indexOf(lang) : -1;
+  return COLUMN_CLASS[i === 0 || i === 1 ? i : fallback];
+}
+
 export const UtteranceBlock = memo(function UtteranceBlock({ id }: { id: string }) {
   const u = useSessionStore((s) => s.byId[id]);
   const controller = useController();
+  const view = useDisplayStore((s) => s.view);
+  const columns = useDisplayStore(selectColumns);
   const [selected, setSelected] = useState(false);
 
   if (!u || u.status === 'skipped') return null;
@@ -50,6 +62,22 @@ export const UtteranceBlock = memo(function UtteranceBlock({ id }: { id: string 
     );
   }
 
+  const parts = visibleParts(u, view);
+  if (!parts.source && !parts.translation) return null;
+  // With one language picked, every visible line reads as the main text, whichever role it has.
+  const single = view !== 'all';
+  const sourceClass = cx(
+    single ? 'translation-text text-foreground' : 'source-text text-muted',
+    columns && 'md:row-start-1',
+    columns && columnOf(u.sourceLang, 0),
+  );
+  const translationClass = cx(
+    'translation-text text-foreground',
+    !single && 'mt-1',
+    columns && 'md:row-start-1 md:mt-0',
+    columns && columnOf(u.targetLang, 1),
+  );
+
   const copy = () => {
     void navigator.clipboard?.writeText(`${u.sourceText ?? ''}\n${u.translation ?? ''}`.trim());
   };
@@ -61,13 +89,19 @@ export const UtteranceBlock = memo(function UtteranceBlock({ id }: { id: string 
       data-status={u.status}
       data-seq={u.seq}
     >
-      <p lang={u.sourceLang} className="source-text text-muted">
-        {u.sourceText}
-      </p>
-      <p lang={u.targetLang} className="translation-text mt-1 text-foreground">
-        {u.translation}
-        {u.status === 'translating' && <span className="caret" aria-hidden />}
-      </p>
+      <div className={cx(columns && 'md:grid md:grid-cols-2 md:gap-x-6')}>
+        {parts.source && (
+          <p lang={u.sourceLang} className={sourceClass} data-role="source">
+            {u.sourceText}
+          </p>
+        )}
+        {parts.translation && (
+          <p lang={u.targetLang} className={translationClass} data-role="translation">
+            {u.translation}
+            {u.status === 'translating' && <span className="caret" aria-hidden />}
+          </p>
+        )}
+      </div>
       {u.status === 'error' && (
         <div className="mt-1 flex items-center gap-2 text-sm text-muted">
           <span>Couldn&apos;t translate</span>
