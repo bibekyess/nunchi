@@ -2,6 +2,32 @@
 
 Changes to, or details not covered by, the implementation plan. Newest first.
 
+## 2026-10-13 — Phase 1
+
+- **We own the mic stream, not MicVAD.** `getStream`/`pauseStream`/`resumeStream` hand MicVAD a
+  stream we opened, and pausing never stops its tracks, so resuming and the 25 s force-split
+  (`pause()` + `start()` with `submitUserSpeechOnPause`) never re-prompt for permission. Stop and
+  device changes do stop the tracks.
+- **VAD option names in vad-web 0.0.31 are in ms** (`redemptionMs`, `preSpeechPadMs`,
+  `minSpeechMs`), matching the plan's values directly. Model `v5` (512-sample frames).
+- **ONNX runtime runs single-threaded** (`numThreads = 1`): multi-threaded WASM needs cross-origin
+  isolation headers, and one thread is plenty for VAD.
+- **Some Phase 2 items landed early because the queue needed them anyway:** the hallucination
+  filter (with tests), 5-line rolling translation context, and glossary + last sentence in the
+  Whisper prompt. Phase 2 still owns tuning and the settings slider.
+- **"Untranslated" retry is client-side**: when the result is empty or equals the source, the
+  queue asks once more with `retry: true`, and the server answers at temperature 0.
+- **Interruption detection:** a mic track `ended` event, or no audio frames within 1.5 s of the
+  page becoming visible again, restarts the recorder and shows a banner.
+- **Clips waiting for the network are capped at 50**; the oldest is dropped (shown as an error)
+  beyond that.
+- **Passcode:** a 401 from any route shows an inline passcode field; the code is kept in
+  `localStorage` and sent as `x-nunchi-token`.
+- **No shadcn yet:** a few local primitives (`components/ui.tsx`: buttons, native `<dialog>`) and a
+  native `<select>` for the language menu, which is also the best picker on phones.
+- **`next start` with `output: 'standalone'`** prints a warning but works; the e2e test uses it.
+  The Docker image (later) will run `.next/standalone/server.js`.
+
 ## 2026-10-13 — Phase 0
 
 - **Next.js 16.4 with Cache Components** (the current `create-next-app` default). Route handlers
