@@ -12,6 +12,7 @@ import { checkAccess } from '@/lib/server/auth';
 import { getEnv } from '@/lib/server/env';
 import { errorResponse, isTimeoutError, jsonError, UpstreamError } from '@/lib/server/http';
 import { getLlm, VLLM_NO_THINKING } from '@/lib/server/llm';
+import { logTiming, ms, startTimer } from '@/lib/server/timing';
 import { ThinkStripper } from '@/lib/think-stripper';
 
 export const maxDuration = 300;
@@ -85,6 +86,7 @@ async function summarizeParts(
 }
 
 export async function POST(request: Request) {
+  const elapsed = startTimer();
   try {
     const denied = checkAccess(request);
     if (denied) return denied;
@@ -113,12 +115,18 @@ export async function POST(request: Request) {
 
     // Open the upstream stream before answering, so failures become a JSON error.
     let upstream;
+    let parts: string | undefined;
     try {
       const chunks = chunkLines(lines);
-      const messages =
-        chunks.length === 1
-          ? buildSummarizeMessages(input, chunks[0])
-          : buildMergeMessages(input, await summarizeParts(input, chunks, request.signal));
+      let messages: ChatMessage[];
+      if (chunks.length === 1) {
+        messages = buildSummarizeMessages(input, chunks[0]);
+      } else {
+        const partsTimer = startTimer();
+        const partSummaries = await summarizeParts(input, chunks, request.signal);
+        parts = `${chunks.length}/${partsTimer()}ms`;
+        messages = buildMergeMessages(input, partSummaries);
+      }
       upstream = await llm.chat.completions.create(
         {
           model: env.LLM_MODEL,
@@ -131,27 +139,48 @@ export async function POST(request: Request) {
         { signal: request.signal, timeout: TIMEOUT_MS },
       );
     } catch (err) {
-      if (request.signal.aborted) return new Response(null, { status: 499 });
+      if (request.signal.aborted) {
+        logTiming('summarize', 'aborted', { parts, total: ms(elapsed()), lines: lines.length });
+        return new Response(null, { status: 499 });
+      }
       throw toUpstreamError(err);
     }
+    const openMs = elapsed();
 
     const encoder = new TextEncoder();
     const body = new ReadableStream<Uint8Array>({
       async start(controller) {
         const stripper = new ThinkStripper();
-        const send = (text: string) => text && controller.enqueue(encoder.encode(text));
+        let outChars = 0;
+        let ttftMs: number | undefined;
+        const timings = () => ({
+          parts,
+          open: ms(openMs),
+          ttft: ms(ttftMs),
+          total: ms(elapsed()),
+          lines: lines.length,
+        });
+        const send = (text: string) => {
+          if (!text) return;
+          ttftMs ??= elapsed();
+          outChars += text.length;
+          controller.enqueue(encoder.encode(text));
+        };
         try {
           for await (const chunk of upstream) {
             send(stripper.push(chunk.choices[0]?.delta?.content ?? ''));
           }
           send(stripper.flush());
+          logTiming('summarize', 'ok', { ...timings(), out: `${outChars}ch` });
           controller.close();
         } catch (err) {
           if (request.signal.aborted) {
+            logTiming('summarize', 'aborted', timings());
             controller.close();
             return;
           }
           const e = toUpstreamError(err);
+          logTiming('summarize', 'error', timings());
           console.error(`[summarize] stream failed: ${e.message}`, e.detail?.slice(0, 500) ?? '');
           controller.error(e);
         }
@@ -169,6 +198,7 @@ export async function POST(request: Request) {
       },
     });
   } catch (err) {
+    logTiming('summarize', 'error', { total: ms(elapsed()) });
     return errorResponse('summarize', err);
   }
 }

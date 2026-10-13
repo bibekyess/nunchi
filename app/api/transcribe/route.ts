@@ -3,6 +3,7 @@ import { LANG_CODES, isLang } from '@/lib/languages';
 import { checkAccess } from '@/lib/server/auth';
 import { errorResponse, jsonError } from '@/lib/server/http';
 import { transcribe } from '@/lib/server/speaches';
+import { logTiming, ms, startTimer } from '@/lib/server/timing';
 
 export const maxDuration = 60;
 
@@ -15,6 +16,8 @@ const fieldsSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const elapsed = startTimer();
+  let audioBytes: number | undefined;
   try {
     const denied = checkAccess(request);
     if (denied) return denied;
@@ -42,19 +45,38 @@ export async function POST(request: Request) {
       return jsonError('bad_request', fields.error.issues[0]?.message ?? 'Invalid fields.');
     }
     const { language, prompt } = fields.data;
+    audioBytes = audio.size;
 
     const forced = language === 'auto' ? undefined : language;
+    const firstCall = startTimer();
     let result = await transcribe(audio, { language: forced, prompt, signal: request.signal });
+    const speachesMs = firstCall();
+    let fallbackMs: number | undefined;
 
     // Whisper often mislabels short clips (e.g. "네.") as Japanese or similar.
     // When auto-detect lands outside the supported set, retry once with the main language.
     if (!forced && result.text !== '' && !isLang(result.language)) {
+      const retryCall = startTimer();
       result = await transcribe(audio, { language: FALLBACK_LANG, prompt, signal: request.signal });
+      fallbackMs = retryCall();
       result.language ??= FALLBACK_LANG;
     }
 
+    logTiming('transcribe', 'ok', {
+      speaches: ms(speachesMs),
+      fallback: ms(fallbackMs),
+      total: ms(elapsed()),
+      audio: ms(result.durationMs),
+      size: `${Math.round(audio.size / 1024)}KB`,
+      lang: result.language ?? 'none',
+      mode: forced ? 'forced' : 'auto',
+    });
     return Response.json(result);
   } catch (err) {
+    logTiming('transcribe', request.signal.aborted ? 'aborted' : 'error', {
+      total: ms(elapsed()),
+      size: audioBytes === undefined ? undefined : `${Math.round(audioBytes / 1024)}KB`,
+    });
     return errorResponse('transcribe', err);
   }
 }

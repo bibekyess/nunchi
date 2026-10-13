@@ -5,6 +5,7 @@ import { checkAccess } from '@/lib/server/auth';
 import { getEnv } from '@/lib/server/env';
 import { errorResponse, isTimeoutError, jsonError, UpstreamError } from '@/lib/server/http';
 import { getLlm, VLLM_NO_THINKING } from '@/lib/server/llm';
+import { logTiming, ms, startTimer } from '@/lib/server/timing';
 import { ThinkStripper } from '@/lib/think-stripper';
 
 export const maxDuration = 60;
@@ -38,6 +39,7 @@ function toUpstreamError(err: unknown): UpstreamError {
 }
 
 export async function POST(request: Request) {
+  const elapsed = startTimer();
   try {
     const denied = checkAccess(request);
     if (denied) return denied;
@@ -57,6 +59,7 @@ export async function POST(request: Request) {
     const env = getEnv();
     const llm = getLlm();
     const messages = buildTranslateMessages(parsed.data);
+    const dir = `${parsed.data.sourceLang}->${parsed.data.targetLang}`;
 
     // Open the upstream stream before answering, so connection errors become a JSON error.
     let upstream;
@@ -73,18 +76,31 @@ export async function POST(request: Request) {
         { signal: request.signal },
       );
     } catch (err) {
-      // The client went away (stopped, navigated); nothing to report.
-      if (request.signal.aborted) return new Response(null, { status: 499 });
+      // The client went away (stopped, navigated); nothing to send back.
+      if (request.signal.aborted) {
+        logTiming('translate', 'aborted', { total: ms(elapsed()), dir });
+        return new Response(null, { status: 499 });
+      }
       throw toUpstreamError(err);
     }
+    const openMs = elapsed();
 
     const encoder = new TextEncoder();
     const body = new ReadableStream<Uint8Array>({
       async start(controller) {
         const stripper = new ThinkStripper();
         let emitted = '';
+        let ttftMs: number | undefined;
+        let emptyRetry = false;
+        const timings = () => ({
+          open: ms(openMs),
+          ttft: ms(ttftMs),
+          total: ms(elapsed()),
+          dir,
+        });
         const send = (text: string) => {
           if (!text) return;
+          ttftMs ??= elapsed();
           emitted += text;
           controller.enqueue(encoder.encode(text));
         };
@@ -97,6 +113,7 @@ export async function POST(request: Request) {
 
           // Empty output: retry once, deterministically, without streaming.
           if (emitted.trim() === '' && !request.signal.aborted) {
+            emptyRetry = true;
             const retry = await llm.chat.completions.create(
               {
                 model: env.LLM_MODEL,
@@ -110,13 +127,20 @@ export async function POST(request: Request) {
             const again = new ThinkStripper();
             send(again.push(retry.choices[0]?.message?.content ?? '') + again.flush());
           }
+          logTiming('translate', 'ok', {
+            ...timings(),
+            out: `${emitted.length}ch`,
+            retry: emptyRetry ? 'empty' : parsed.data.retry ? 'client' : undefined,
+          });
           controller.close();
         } catch (err) {
           if (request.signal.aborted) {
+            logTiming('translate', 'aborted', timings());
             controller.close();
             return;
           }
           const e = toUpstreamError(err);
+          logTiming('translate', 'error', timings());
           console.error(`[translate] stream failed: ${e.message}`, e.detail?.slice(0, 500) ?? '');
           controller.error(e);
         }
@@ -134,6 +158,7 @@ export async function POST(request: Request) {
       },
     });
   } catch (err) {
+    logTiming('translate', 'error', { total: ms(elapsed()) });
     return errorResponse('translate', err);
   }
 }
