@@ -61,7 +61,16 @@ function wavSeconds(body) {
   return body.readUInt32LE(i + 4) / (rate * 2);
 }
 
-const server = http.createServer(async (req, res) => {
+const server = http.createServer((req, res) => {
+  handle(req, res).catch((err) => {
+    // Clients abort requests all the time (stop button, page close); keep serving.
+    console.log(`[mock] ${req.method} ${req.url} aborted: ${err.code ?? err.message}`);
+    if (!res.headersSent) res.writeHead(500);
+    res.end();
+  });
+});
+
+async function handle(req, res) {
   const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
   console.log(`[mock] ${req.method} ${url.pathname}`);
   await sleep(LATENCY);
@@ -142,7 +151,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   json(res, 404, { error: { message: 'not found' } });
-});
+}
 
 server.listen(PORT, () => {
   console.log(`[mock] Speaches + LLM mock listening on http://localhost:${PORT}/v1`);
