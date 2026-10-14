@@ -1,0 +1,11 @@
+services:
+  nunchi:
+    build: .
+    image: nunchi:latest
+    container_name: nunchi
+    restart: unless-stopped
+    # Server-only settings (Speaches, LLM, APP_ACCESS_TOKEN). Copy .env.example to .env.local.
+    env_file: .env.local
+    ports:
+      # Bound to localhost; put nginx (HTTPS) in front. The microphone needs HTTPS.
+      - '${PORT:-9083}:3000'
