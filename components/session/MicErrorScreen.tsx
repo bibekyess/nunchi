@@ -2,7 +2,7 @@
 
 import { MicOff } from 'lucide-react';
 import { useSessionStore } from '@/lib/store/session-store';
-import { Button } from '../ui';
+import { Button, Card } from '../ui';
 import { useController } from './controller-context';
 
 const isIOS = () =>
@@ -37,21 +37,27 @@ export function MicErrorScreen() {
 
   return (
     <div
-      className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-background px-8 text-center"
+      className="absolute inset-0 z-30 flex animate-fade-in items-center justify-center bg-canvas px-4"
       role="alertdialog"
       aria-labelledby="mic-error-title"
     >
-      <MicOff className="h-12 w-12 text-muted" aria-hidden />
-      <h2 id="mic-error-title" className="text-xl font-semibold">
-        {error.message}
-      </h2>
-      <p className="max-w-sm text-muted">{help(error.kind)}</p>
-      <div className="flex gap-2">
-        <Button onClick={() => setRecorder('idle')}>Close</Button>
-        <Button variant="primary" onClick={() => void controller.start()}>
-          Try again
-        </Button>
-      </div>
+      <Card className="flex w-full max-w-sm animate-scale-in flex-col items-center px-6 pt-8 pb-6 text-center shadow-lg!">
+        <span className="mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-danger-soft text-danger-ink">
+          <MicOff className="h-7 w-7" aria-hidden />
+        </span>
+        <h2 id="mic-error-title" className="text-xl font-semibold tracking-tight">
+          {error.message}
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-ink-muted">{help(error.kind)}</p>
+        <div className="mt-6 flex w-full gap-2">
+          <Button className="flex-1" onClick={() => setRecorder('idle')}>
+            Close
+          </Button>
+          <Button className="flex-1" variant="primary" onClick={() => void controller.start()}>
+            Try again
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }

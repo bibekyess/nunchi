@@ -18,3 +18,38 @@ export function formatDateTime(ms: number, locale?: string): string {
     minute: '2-digit',
   });
 }
+
+export type DateGroup = 'today' | 'week' | 'earlier';
+
+export const DATE_GROUP_LABELS: Record<DateGroup, string> = {
+  today: 'Today',
+  week: 'This week',
+  earlier: 'Earlier',
+};
+
+/**
+ * Splits items (newest first) into Today / This week (the six days before today) / Earlier,
+ * by local calendar day. Empty groups are left out; order within a group is kept.
+ */
+export function groupByDate<T>(
+  items: readonly T[],
+  timeOf: (item: T) => number,
+  now = Date.now(),
+): { group: DateGroup; items: T[] }[] {
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const today = startOfToday.getTime();
+  // setDate handles month ends and DST shifts, unlike subtracting 6 * 24 h.
+  const weekStart = new Date(startOfToday);
+  weekStart.setDate(weekStart.getDate() - 6);
+  const week = weekStart.getTime();
+
+  const groups: Record<DateGroup, T[]> = { today: [], week: [], earlier: [] };
+  for (const item of items) {
+    const t = timeOf(item);
+    groups[t >= today ? 'today' : t >= week ? 'week' : 'earlier'].push(item);
+  }
+  return (['today', 'week', 'earlier'] as const)
+    .filter((g) => groups[g].length > 0)
+    .map((g) => ({ group: g, items: groups[g] }));
+}

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { fetchHealth, type HealthStatus } from '@/lib/api-client';
-import { cx } from './ui';
+import { Badge, cx } from './ui';
 
 type Health = HealthStatus | { failed: true } | null;
 
@@ -36,16 +36,38 @@ export function HealthDot({ compact = false }: { compact?: boolean }) {
           ? 'Servers ready'
           : `Speech ${health.speaches === 'ok' ? 'ok' : 'down'} · Translation ${health.llm === 'ok' ? 'ok' : 'down'}`;
 
+  const checking = health === null;
+
+  if (!compact) {
+    return (
+      <Badge
+        tone={checking ? 'neutral' : down ? 'danger' : 'ok'}
+        dot
+        pulse={checking}
+        role="status"
+        title={label}
+        size="md"
+      >
+        {label}
+      </Badge>
+    );
+  }
+
+  // Compact (session header): a dot with a soft halo; the label is for screen readers.
   return (
-    <span className="inline-flex items-center gap-2 text-sm text-muted" role="status" title={label}>
+    <span className="inline-flex items-center" role="status" title={label}>
       <span
-        className={cx(
-          'h-2.5 w-2.5 rounded-full',
-          health === null ? 'bg-gray-400' : down ? 'bg-red-500' : 'bg-green-500',
-        )}
         aria-hidden
+        className={cx(
+          'h-2 w-2 rounded-full ring-[3px] transition-colors duration-300',
+          checking
+            ? 'animate-pulse-dot bg-ink-faint ring-ink-faint/20'
+            : down
+              ? 'bg-danger ring-danger/20 shadow-[0_0_8px_var(--danger)]'
+              : 'bg-ok ring-ok/20 shadow-[0_0_8px_var(--ok)]',
+        )}
       />
-      <span className={compact ? 'sr-only' : undefined}>{label}</span>
+      <span className="sr-only">{label}</span>
     </span>
   );
 }

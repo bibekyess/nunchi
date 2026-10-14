@@ -1,10 +1,10 @@
 'use client';
 
-import { KeyRound, RotateCw, WifiOff, X } from 'lucide-react';
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { TriangleAlert, KeyRound, MonitorX, RotateCw, WifiOff, X } from 'lucide-react';
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { setAccessToken } from '@/lib/api-client';
 import { useSessionStore } from '@/lib/store/session-store';
-import { Button } from '../ui';
+import { Button, cx, IconButton, Input } from '../ui';
 import { useController } from './controller-context';
 
 function subscribeOnline(cb: () => void) {
@@ -16,22 +16,51 @@ function subscribeOnline(cb: () => void) {
   };
 }
 
-function Banner({ children, onDismiss }: { children: React.ReactNode; onDismiss?: () => void }) {
+type BannerTone = 'neutral' | 'accent' | 'warn' | 'danger';
+
+// Tints are layered over a solid surface: the soft tones are translucent in dark mode, and
+// transcript text scrolling under the glass bar must not show through.
+const TONES: Record<BannerTone, string> = {
+  neutral: 'border-line text-ink [--tint:transparent]',
+  accent: 'border-transparent text-accent-ink [--tint:var(--lavender)]',
+  warn: 'border-transparent text-warn-ink [--tint:var(--warn-soft)]',
+  danger: 'border-transparent text-danger-ink [--tint:var(--danger-soft)]',
+};
+
+/** A tinted notice under the toolbar (inside the glass top bar, so no blur of its own). */
+function Banner({
+  tone,
+  icon,
+  children,
+  onDismiss,
+}: {
+  tone: BannerTone;
+  icon: ReactNode;
+  children: ReactNode;
+  onDismiss?: () => void;
+}) {
   return (
     <div
-      className="mx-3 mt-2 flex items-center gap-3 rounded-xl bg-subtle px-4 py-2 text-sm"
+      className={cx(
+        'mb-2 flex animate-slide-down-in items-center gap-3 rounded-2xl border bg-surface bg-[image:linear-gradient(var(--tint),var(--tint))] py-1.5 pl-4 text-sm shadow-sm',
+        onDismiss ? 'pr-1' : 'pr-2',
+        TONES[tone],
+      )}
       role="alert"
     >
-      <div className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-1">{children}</div>
+      <span className="flex shrink-0 [&>svg]:h-4 [&>svg]:w-4" aria-hidden>
+        {icon}
+      </span>
+      <div className="flex min-h-11 flex-1 flex-wrap items-center gap-x-3 gap-y-1">{children}</div>
       {onDismiss && (
-        <button
-          type="button"
+        <IconButton
+          label="Dismiss"
+          variant="ghost"
           onClick={onDismiss}
-          aria-label="Dismiss"
-          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
+          className="enabled:text-current"
         >
           <X className="h-4 w-4" aria-hidden />
-        </button>
+        </IconButton>
       )}
     </div>
   );
@@ -63,27 +92,27 @@ export function Banners() {
   return (
     <>
       {!online && (
-        <Banner>
-          <WifiOff className="h-4 w-4" aria-hidden />
+        <Banner tone="warn" icon={<WifiOff />}>
           <span>Offline. Speech is kept and sent when the connection returns.</span>
         </Banner>
       )}
       {interrupted && (
-        <Banner onDismiss={() => setInterrupted(false)}>
+        <Banner tone="warn" icon={<TriangleAlert />} onDismiss={() => setInterrupted(false)}>
           <span>Listening was interrupted and has restarted. Some speech may be missing.</span>
         </Banner>
       )}
       {sharingStopped && (
-        <Banner onDismiss={() => setSharingStopped(false)}>
+        <Banner tone="neutral" icon={<MonitorX />} onDismiss={() => setSharingStopped(false)}>
           <span>Tab sharing stopped, so listening is paused.</span>
-          <Button onClick={() => void controller.resume()}>Share again</Button>
+          <Button size="sm" onClick={() => void controller.resume()}>
+            Share again
+          </Button>
         </Banner>
       )}
       {needsToken && (
-        <Banner>
-          <KeyRound className="h-4 w-4" aria-hidden />
+        <Banner tone="accent" icon={<KeyRound />}>
           <form
-            className="flex flex-1 flex-wrap items-center gap-2"
+            className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-2 py-1"
             onSubmit={(e) => {
               e.preventDefault();
               setAccessToken(token.trim());
@@ -91,26 +120,30 @@ export function Banners() {
               controller.queue.retryAllFailed();
             }}
           >
-            <label htmlFor="access-token">Passcode required</label>
-            <input
-              id="access-token"
-              type="password"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              className="min-h-11 min-w-0 flex-1 rounded-lg border border-line bg-background px-3 text-base"
-            />
-            <Button type="submit" variant="primary">
-              Save
-            </Button>
+            <label htmlFor="access-token" className="font-medium">
+              Passcode required
+            </label>
+            <div className="flex min-w-0 flex-1 basis-56 gap-2">
+              <Input
+                id="access-token"
+                type="password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                className="min-w-0 flex-1"
+              />
+              <Button type="submit" variant="primary">
+                Save
+              </Button>
+            </div>
           </form>
         </Banner>
       )}
       {failed > 0 && !needsToken && (
-        <Banner>
+        <Banner tone="danger" icon={<TriangleAlert />}>
           <span>
             {failed} {failed === 1 ? 'line' : 'lines'} failed.
           </span>
-          <Button onClick={() => controller.queue.retryAllFailed()}>
+          <Button size="sm" onClick={() => controller.queue.retryAllFailed()}>
             <RotateCw className="h-4 w-4" aria-hidden /> Retry all failed
           </Button>
         </Banner>

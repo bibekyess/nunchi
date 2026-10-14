@@ -1,5 +1,4 @@
 import type { Lang } from '@/lib/languages';
-import { cx } from './ui';
 
 // Inline SVG flags: emoji flags don't render on Windows. Simplified to read at 20 px.
 
@@ -48,10 +47,14 @@ export function LangFlag({ lang, className }: { lang: Lang; className?: string }
   const Flag = FLAGS[lang];
   return (
     <span
-      className={cx(
-        'inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-subtle text-[9px] font-semibold uppercase ring-1 ring-line [&>svg]:h-full [&>svg]:w-full',
+      // Plain join, not ui.tsx's cx: this also renders in server components (the home page).
+      className={[
+        'inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface-2 text-[9px] font-semibold text-ink-muted uppercase ring-1 ring-ink/10',
+        '[&>svg]:h-full [&>svg]:w-full',
         className,
-      )}
+      ]
+        .filter(Boolean)
+        .join(' ')}
     >
       {Flag ? <Flag /> : lang}
     </span>

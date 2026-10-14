@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { AppWindow, Blend, ChevronDown, Mic, RotateCcw } from 'lucide-react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   listInputDevices,
   saveNoiseSuppression,
@@ -22,22 +23,34 @@ import {
   type VadSettings,
 } from '@/lib/audio/vad-settings';
 import { useController } from '../session/controller-context';
-import { Button, cx, Dialog } from '../ui';
+import { Button, cx, Dialog, Switch } from '../ui';
 
-const SOURCES: { id: AudioSource; label: string; hint: string }[] = [
-  { id: 'mic', label: 'Microphone', hint: 'People speaking in the room.' },
+const SOURCE_ICON = 'h-5 w-5';
+const SOURCES: { id: AudioSource; label: string; hint: string; icon: ReactNode }[] = [
+  {
+    id: 'mic',
+    label: 'Microphone',
+    hint: 'People speaking in the room.',
+    icon: <Mic className={SOURCE_ICON} aria-hidden />,
+  },
   {
     id: 'tab',
     label: 'Tab audio',
     hint: 'A video call or video in another tab. Chrome asks which tab to share.',
+    icon: <AppWindow className={SOURCE_ICON} aria-hidden />,
   },
-  { id: 'mix', label: 'Tab + microphone', hint: 'Both, e.g. a call where you also speak.' },
+  {
+    id: 'mix',
+    label: 'Tab + microphone',
+    hint: 'Both, e.g. a call where you also speak.',
+    icon: <Blend className={SOURCE_ICON} aria-hidden />,
+  },
 ];
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="mt-6 first:mt-0">
-      <h3 className="mb-2 text-xs font-semibold tracking-wide text-muted uppercase">{title}</h3>
+    <section className="mt-7 first:mt-1">
+      <h3 className="mb-3 text-xs font-medium tracking-wide text-ink-muted uppercase">{title}</h3>
       {children}
     </section>
   );
@@ -66,11 +79,13 @@ function Slider({
 }) {
   return (
     <div className="mt-4 first:mt-0">
-      <div className="flex items-baseline justify-between gap-4">
+      <div className="flex items-center justify-between gap-4">
         <label htmlFor={id} className="text-sm font-medium">
           {label}
         </label>
-        <span className="text-sm text-muted tabular-nums">{display}</span>
+        <span className="inline-flex h-6 min-w-12 items-center justify-center rounded-full bg-lavender px-2.5 text-xs font-medium text-accent-ink tabular-nums">
+          {display}
+        </span>
       </div>
       <input
         id={id}
@@ -80,9 +95,10 @@ function Slider({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-1 h-11 w-full accent-current"
+        className="range w-full"
+        style={{ '--fill': `${((value - min) / (max - min)) * 100}%` } as CSSProperties}
       />
-      <p className="text-sm text-muted">{hint}</p>
+      <p className="-mt-1 text-sm text-ink-muted">{hint}</p>
     </div>
   );
 }
@@ -154,32 +170,44 @@ export function AudioSettingsDialog({ open, onClose }: { open: boolean; onClose:
     >
       {tabSupported && (
         <Section title="Listen to">
-          <div role="radiogroup" aria-label="Audio source" className="flex flex-col gap-1">
+          <div role="radiogroup" aria-label="Audio source" className="flex flex-col gap-2">
             {SOURCES.map((s) => (
+              // Selectable card around a native radio (kept for keyboard and screen readers).
               <label
                 key={s.id}
                 className={cx(
-                  'flex min-h-11 cursor-pointer items-start gap-3 rounded-lg px-3 py-2',
-                  source === s.id && 'bg-subtle',
+                  'flex min-h-11 cursor-pointer items-center gap-3 rounded-2xl border p-3 transition-[background-color,border-color,box-shadow] duration-150 ease-out has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-ring',
+                  source === s.id
+                    ? 'border-transparent bg-lavender ring-2 ring-accent'
+                    : 'border-line bg-surface hover:border-line-strong hover:bg-surface-2',
                 )}
               >
+                <span
+                  aria-hidden
+                  className={cx(
+                    'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors duration-150',
+                    source === s.id ? 'bg-surface text-accent-ink' : 'bg-ink/[0.05] text-ink-muted',
+                  )}
+                >
+                  {s.icon}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{s.label}</span>
+                  <span className="block text-sm text-ink-muted">{s.hint}</span>
+                </span>
                 <input
                   type="radio"
                   name="audio-source"
                   value={s.id}
                   checked={source === s.id}
                   onChange={() => setSource(s.id)}
-                  className="mt-1 h-5 w-5 accent-current"
+                  className="h-5 w-5 shrink-0 cursor-pointer appearance-none rounded-full border-2 border-line-strong bg-surface transition-[border-color,box-shadow] duration-150 checked:border-accent checked:shadow-[inset_0_0_0_3.5px_var(--surface),inset_0_0_0_10px_var(--accent)] focus-visible:outline-none"
                 />
-                <span>
-                  <span className="block text-sm font-medium">{s.label}</span>
-                  <span className="block text-sm text-muted">{s.hint}</span>
-                </span>
               </label>
             ))}
           </div>
           {source !== 'mic' && (
-            <p className="mt-2 text-sm text-muted">
+            <p className="mt-3 animate-fade-in rounded-2xl bg-surface-2 px-3.5 py-2.5 text-sm text-ink-muted">
               Turn on “Also share tab audio” in Chrome’s share window. Sharing the entire screen
               captures all computer sound on Windows and ChromeOS only.
             </p>
@@ -192,37 +220,38 @@ export function AudioSettingsDialog({ open, onClose }: { open: boolean; onClose:
           <label className="block text-sm font-medium" htmlFor="mic-device">
             Input
           </label>
-          <select
-            id="mic-device"
-            value={deviceId}
-            onChange={(e) => setDeviceId(e.target.value)}
-            className="mt-1 min-h-11 w-full rounded-lg border border-line bg-background px-3 text-base"
-          >
-            <option value="">System default</option>
-            {devices.map((d) => (
-              <option key={d.deviceId} value={d.deviceId}>
-                {d.label}
-              </option>
-            ))}
-          </select>
+          <div className="relative mt-1.5">
+            <select
+              id="mic-device"
+              value={deviceId}
+              onChange={(e) => setDeviceId(e.target.value)}
+              className="min-h-11 w-full cursor-pointer appearance-none truncate rounded-xl border border-line bg-surface pr-10 pl-3.5 text-base text-ink shadow-sm transition-[border-color,box-shadow] duration-150 ease-out hover:border-line-strong focus:border-accent focus:ring-3 focus:ring-accent/20 focus:outline-none"
+            >
+              <option value="">System default</option>
+              {devices.map((d) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              className="pointer-events-none absolute top-1/2 right-3.5 h-4 w-4 -translate-y-1/2 text-ink-muted"
+              aria-hidden
+            />
+          </div>
           {unlabeled && (
-            <p className="mt-1 text-sm text-muted">Start listening once to see microphone names.</p>
+            <p className="mt-1.5 text-sm text-ink-muted">
+              Start listening once to see microphone names.
+            </p>
           )}
 
-          <label className="mt-4 flex min-h-11 items-center justify-between gap-4">
-            <span>
-              <span className="block text-sm font-medium">Noise suppression</span>
-              <span className="block text-sm text-muted">
-                Turn off if quiet speakers get cut off.
-              </span>
-            </span>
-            <input
-              type="checkbox"
-              checked={noise}
-              onChange={(e) => setNoise(e.target.checked)}
-              className="h-6 w-6 accent-current"
-            />
-          </label>
+          <Switch
+            className="mt-4"
+            checked={noise}
+            onChange={setNoise}
+            label="Noise suppression"
+            description="Turn off if quiet speakers get cut off."
+          />
         </Section>
       )}
 
@@ -258,9 +287,11 @@ export function AudioSettingsDialog({ open, onClose }: { open: boolean; onClose:
         />
         <Button
           variant="ghost"
-          className="mt-3 -ml-3"
+          size="sm"
+          className="mt-4 -ml-3.5"
           onClick={() => updateVad(DEFAULT_VAD_SETTINGS)}
         >
+          <RotateCcw className="h-4 w-4 text-ink-muted" aria-hidden />
           Reset to defaults
         </Button>
       </Section>

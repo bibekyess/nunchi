@@ -1,22 +1,30 @@
 'use client';
 
-import { Languages } from 'lucide-react';
-import { MODE_PRESETS, modeId } from '@/lib/pipeline/direction';
+import { ArrowLeftRight, ArrowRight } from 'lucide-react';
+import { MODE_PRESETS, modeId, PRIMARY_LANG } from '@/lib/pipeline/direction';
 import { useSessionStore } from '@/lib/store/session-store';
+import { cx, SELECT_PILL } from '../ui';
 
-/** Translation direction as a round icon button over a native <select> (best picker on phones). */
+/**
+ * Translation direction as a "KO → EN" pill (⇄ in auto mode) over a native <select>
+ * (best picker on phones).
+ */
 export function LanguageMenu() {
   const mode = useSessionStore((s) => s.session?.mode);
   const setMode = useSessionStore((s) => s.setMode);
   if (!mode) return null;
   const current = MODE_PRESETS.find((p) => p.id === modeId(mode));
+  const auto = mode.source === 'auto';
+  const from = auto ? PRIMARY_LANG : mode.source;
+  const Arrow = auto ? ArrowLeftRight : ArrowRight;
 
   return (
-    <label
-      className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-line bg-background active:bg-subtle"
-      title={`Translate: ${current?.label}`}
-    >
-      <Languages className="h-5 w-5" aria-hidden />
+    <label className={cx(SELECT_PILL, 'shrink-0')} title={`Translate: ${current?.label}`}>
+      <span className="flex items-center gap-1.5 tracking-wide uppercase" aria-hidden>
+        {from}
+        <Arrow className="h-3.5 w-3.5 text-ink-muted" strokeWidth={2.25} />
+        {mode.target}
+      </span>
       <span className="sr-only">Translation direction</span>
       <select
         value={modeId(mode)}
@@ -24,7 +32,6 @@ export function LanguageMenu() {
           const preset = MODE_PRESETS.find((p) => p.id === e.target.value);
           if (preset) setMode(preset.mode);
         }}
-        className="absolute inset-0 cursor-pointer opacity-0"
       >
         {MODE_PRESETS.map((p) => (
           <option key={p.id} value={p.id}>

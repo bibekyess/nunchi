@@ -5,6 +5,7 @@ import { LANG_CODES, SUPPORTED_LANGS } from '@/lib/languages';
 import type { ViewLang } from '@/lib/display/view';
 import { useDisplayStore } from '@/lib/store/display-store';
 import { LangFlag } from '../LangFlag';
+import { cx, SELECT_PILL } from '../ui';
 
 const OPTIONS: { id: ViewLang; label: string }[] = [
   { id: 'all', label: 'All languages' },
@@ -18,11 +19,15 @@ export function ViewFilterMenu() {
   const label = OPTIONS.find((o) => o.id === view)?.label ?? OPTIONS[0].label;
 
   return (
-    <label className="relative inline-flex min-h-11 min-w-0 items-center gap-2 rounded-full border border-line pr-9 pl-2.5 text-sm">
+    <label className={cx(SELECT_PILL, 'pr-3 pl-2')}>
       <span className="flex shrink-0" aria-hidden>
         {view === 'all' ? (
           LANG_CODES.map((l, i) => (
-            <LangFlag key={l} lang={l} className={i > 0 ? '-ml-1.5' : undefined} />
+            <LangFlag
+              key={l}
+              lang={l}
+              className={i > 0 ? '-ml-1.5 ring-2 ring-surface' : undefined}
+            />
           ))
         ) : (
           <LangFlag lang={view} />
@@ -32,7 +37,6 @@ export function ViewFilterMenu() {
       <select
         value={view}
         onChange={(e) => setView(e.target.value as ViewLang)}
-        className="absolute inset-0 cursor-pointer opacity-0"
         data-testid="view-filter"
       >
         {OPTIONS.map((o) => (
@@ -44,10 +48,7 @@ export function ViewFilterMenu() {
       <span className="truncate" aria-hidden>
         {label}
       </span>
-      <ChevronDown
-        className="pointer-events-none absolute right-3 h-4 w-4 text-muted"
-        aria-hidden
-      />
+      <ChevronDown className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden />
     </label>
   );
 }
