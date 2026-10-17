@@ -29,7 +29,8 @@ function authHeaders(): Record<string, string> {
   return token ? { [ACCESS_TOKEN_HEADER]: token } : {};
 }
 
-function kindOf(status: number): EngineErrorKind {
+function kindOf(status: number, code: string): EngineErrorKind {
+  if (code === 'not_configured') return 'unavailable';
   if (status === 0) return 'network';
   if (status === 401) return 'auth';
   if (status === 408 || status === 504) return 'timeout';
@@ -44,11 +45,12 @@ export class ApiError extends EngineError {
     public readonly code: string,
     message: string,
   ) {
-    // Network failures, timeouts and 5xx are worth retrying; 4xx are not.
-    super(kindOf(status), message, {
-      retryable: status === 0 || status === 408 || status === 429 || status >= 500,
-      engine: 'server',
-    });
+    // Network failures, timeouts and 5xx are worth retrying; 4xx are not, and neither is a
+    // server that has no upstream for the task.
+    const retryable =
+      code !== 'not_configured' &&
+      (status === 0 || status === 408 || status === 429 || status >= 500);
+    super(kindOf(status, code), message, { retryable, engine: 'server' });
     this.name = 'ApiError';
   }
 }
@@ -145,7 +147,7 @@ async function summarizeStream(
   return readTextStream(res, onDelta, 'Summary');
 }
 
-export type ServiceHealth = 'ok' | 'error';
+export type ServiceHealth = 'ok' | 'error' | 'not_configured';
 export type HealthStatus = { speaches: ServiceHealth; llm: ServiceHealth };
 
 /** Health results are shared by the three engines for this long, so one check serves all. */
@@ -179,9 +181,9 @@ export function resetServerHealth() {
 async function serviceStatus(service: keyof HealthStatus): Promise<EngineStatus> {
   try {
     const h = await sharedHealth();
-    return h[service] === 'ok'
-      ? { state: 'ready' }
-      : { state: 'error', reason: 'The server is not answering.' };
+    if (h[service] === 'ok') return { state: 'ready' };
+    if (h[service] === 'not_configured') return { state: 'not_configured' };
+    return { state: 'error', reason: 'The server is not answering.' };
   } catch (err) {
     if (err instanceof EngineError && err.kind === 'auth') {
       return { state: 'error', reason: 'Passcode required.' };

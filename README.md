@@ -102,7 +102,11 @@ The env file is read at container start, never baked into the image. After editi
 All routes return errors as `{ error: { code, message } }` and require the `x-nunchi-token`
 header when `APP_ACCESS_TOKEN` is set. Upstream error bodies are logged, never forwarded.
 
-- `GET /api/health` → `{ speaches: 'ok' | 'error', llm: 'ok' | 'error' }`
+Each upstream is optional. Leave `SPEACHES_BASE_URL` empty (or both `LLM_BASE_URL` and
+`LLM_MODEL`) and the routes for that service answer `503` with code `not_configured`; the
+Processing settings then show Server as not available for that task.
+
+- `GET /api/health` → `{ speaches, llm }`, each `'ok' | 'error' | 'not_configured'`
 - `POST /api/transcribe` (multipart: `audio` WAV ≤ 2 MB, `language` `ko|en|auto`, `prompt` ≤ 200
   chars) → `{ text, language, durationMs, segments: [{ text, noSpeechProb, avgLogprob }] }`.
   In auto mode, a detected language outside Korean/English triggers one re-transcription as Korean.

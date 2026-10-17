@@ -2,9 +2,11 @@ import { z } from 'zod';
 import { startSummary, summaryLines, type SummaryRun } from '@/lib/core/summarize';
 import { glossarySchema, langSchema, meetingContextSchema } from '@/lib/schemas';
 import { checkAccess } from '@/lib/server/auth';
+import { isConfigured } from '@/lib/server/env';
 import {
   errorResponse,
   jsonError,
+  notConfigured,
   parseJsonBody,
   streamText,
   toUpstreamError,
@@ -35,6 +37,7 @@ export async function POST(request: Request) {
   try {
     const denied = checkAccess(request);
     if (denied) return denied;
+    if (!isConfigured('llm')) return notConfigured('llm');
 
     const { data, error } = await parseJsonBody(request, bodySchema);
     if (error) return error;

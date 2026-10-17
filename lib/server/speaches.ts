@@ -3,7 +3,7 @@ import type { SpeechModel } from '@/lib/core/models';
 import { normalizeWhisperLanguage, type Lang } from '@/lib/languages';
 import type { TranscriptionResult } from '@/lib/types';
 import { getEnv } from './env';
-import { isTimeoutError, UpstreamError } from './http';
+import { isTimeoutError, NotConfiguredError, UpstreamError } from './http';
 
 const TRANSCRIBE_TIMEOUT_MS = 30_000;
 
@@ -30,6 +30,7 @@ export async function transcribe(
   opts: TranscribeOptions = {},
 ): Promise<TranscriptionResult> {
   const env = getEnv();
+  if (!env.SPEACHES_BASE_URL) throw new NotConfiguredError('speaches');
   const form = new FormData();
   form.append('file', audio, 'clip.wav');
   form.append('model', env.SPEACHES_MODEL);
@@ -78,8 +79,10 @@ export async function transcribe(
 export const serverSpeech: SpeechModel = { transcribe };
 
 export async function pingSpeaches(timeoutMs = 5_000): Promise<boolean> {
+  const base = getEnv().SPEACHES_BASE_URL;
+  if (!base) return false;
   try {
-    const res = await fetch(`${getEnv().SPEACHES_BASE_URL}/models`, {
+    const res = await fetch(`${base}/models`, {
       headers: authHeaders(),
       signal: AbortSignal.timeout(timeoutMs),
     });

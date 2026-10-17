@@ -37,4 +37,10 @@ describe('ApiError', () => {
     expect(err.kind).toBe(kind);
     expect(err.retryable).toBe(retryable);
   });
+
+  it('treats a server without the upstream as unavailable, not worth retrying', () => {
+    const err = new ApiError(503, 'not_configured', 'Speech-to-text is not set up on this server.');
+    expect(err.kind).toBe('unavailable');
+    expect(err.retryable).toBe(false);
+  });
 });

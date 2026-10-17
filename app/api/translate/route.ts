@@ -7,7 +7,14 @@ import {
   translationContextSchema,
 } from '@/lib/schemas';
 import { checkAccess } from '@/lib/server/auth';
-import { errorResponse, parseJsonBody, streamText, toUpstreamError } from '@/lib/server/http';
+import { isConfigured } from '@/lib/server/env';
+import {
+  errorResponse,
+  notConfigured,
+  parseJsonBody,
+  streamText,
+  toUpstreamError,
+} from '@/lib/server/http';
 import { serverChat } from '@/lib/server/llm';
 import { logTiming, ms, startTimer } from '@/lib/server/timing';
 
@@ -29,6 +36,7 @@ export async function POST(request: Request) {
   try {
     const denied = checkAccess(request);
     if (denied) return denied;
+    if (!isConfigured('llm')) return notConfigured('llm');
 
     const { data: input, error } = await parseJsonBody(request, bodySchema);
     if (error) return error;

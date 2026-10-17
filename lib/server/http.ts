@@ -1,6 +1,7 @@
 import 'server-only';
 import type { z } from 'zod';
 import type { ApiErrorBody } from '@/lib/types';
+import type { Service } from './env';
 import { logTiming, ms, type Field } from './timing';
 
 export type ErrorCode =
@@ -10,6 +11,7 @@ export type ErrorCode =
   | 'upstream_error'
   | 'upstream_timeout'
   | 'server_misconfigured'
+  | 'not_configured'
   | 'internal_error';
 
 const STATUS: Record<ErrorCode, number> = {
@@ -19,12 +21,31 @@ const STATUS: Record<ErrorCode, number> = {
   upstream_error: 502,
   upstream_timeout: 504,
   server_misconfigured: 500,
+  not_configured: 503,
   internal_error: 500,
 };
 
 export function jsonError(code: ErrorCode, message: string): Response {
   const body: ApiErrorBody = { error: { code, message } };
   return Response.json(body, { status: STATUS[code] });
+}
+
+const NOT_CONFIGURED: Record<Service, string> = {
+  speaches: 'Speech-to-text is not set up on this server.',
+  llm: 'Translation and summaries are not set up on this server.',
+};
+
+/** This deployment has no upstream for the service (its env vars are empty). */
+export class NotConfiguredError extends Error {
+  constructor(public readonly service: Service) {
+    super(`${service} not configured`);
+    this.name = 'NotConfiguredError';
+  }
+}
+
+/** 503 for a route whose upstream this deployment doesn't have. */
+export function notConfigured(service: Service): Response {
+  return jsonError('not_configured', NOT_CONFIGURED[service]);
 }
 
 /** An upstream call failed. `detail` is logged server-side only, never sent to the client. */
@@ -149,6 +170,7 @@ export function streamText({
 
 /** Map anything thrown inside a route to a safe JSON error and log the detail. */
 export function errorResponse(route: string, err: unknown): Response {
+  if (err instanceof NotConfiguredError) return notConfigured(err.service);
   if (err instanceof UpstreamError) {
     console.error(
       `[${route}] ${err.message}`,

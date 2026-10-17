@@ -27,6 +27,15 @@ describe('server engines', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+  it('reports a task the server has no upstream for', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => json({ speaches: 'not_configured', llm: 'ok' })),
+    );
+    expect(await serverSpeech.status()).toEqual({ state: 'not_configured' });
+    expect(await serverTranslate.status()).toEqual({ state: 'ready' });
+  });
+
   it('reports a missing passcode', async () => {
     vi.stubGlobal(
       'fetch',

@@ -1,7 +1,8 @@
 import 'server-only';
 import OpenAI from 'openai';
 import type { ChatMessage, ChatModel, ChatOptions } from '@/lib/core/models';
-import { getEnv } from './env';
+import { getEnv, isConfigured } from './env';
+import { NotConfiguredError } from './http';
 
 let client: OpenAI | undefined;
 
@@ -9,6 +10,7 @@ let client: OpenAI | undefined;
 export function getLlm(): OpenAI {
   if (client) return client;
   const env = getEnv();
+  if (!isConfigured('llm', env)) throw new NotConfiguredError('llm');
   client = new OpenAI({
     baseURL: env.LLM_BASE_URL,
     apiKey: env.LLM_API_KEY,
@@ -33,7 +35,7 @@ export const VLLM_NO_THINKING = {
 
 function requestFields(messages: ChatMessage[], opts: ChatOptions) {
   return {
-    model: getEnv().LLM_MODEL,
+    model: getEnv().LLM_MODEL!, // set whenever getLlm() succeeded
     messages,
     temperature: opts.temperature,
     max_tokens: opts.maxTokens,

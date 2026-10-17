@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { transcribeWithFallback } from '@/lib/core/transcribe';
 import { langOrAutoSchema } from '@/lib/schemas';
 import { checkAccess } from '@/lib/server/auth';
-import { errorResponse, jsonError } from '@/lib/server/http';
+import { isConfigured } from '@/lib/server/env';
+import { errorResponse, jsonError, notConfigured } from '@/lib/server/http';
 import { serverSpeech } from '@/lib/server/speaches';
 import { logTiming, ms, startTimer } from '@/lib/server/timing';
 
@@ -21,6 +22,7 @@ export async function POST(request: Request) {
   try {
     const denied = checkAccess(request);
     if (denied) return denied;
+    if (!isConfigured('speaches')) return notConfigured('speaches');
 
     let form: FormData;
     try {
