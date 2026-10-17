@@ -34,9 +34,10 @@ export function ProcessingDialog({ open, onClose }: { open: boolean; onClose: ()
   const saved = useEngineSettings((s) => s.choice);
   const setChoice = useEngineSettings((s) => s.setChoice);
   const [draft, setDraft] = useState<EngineChoice>(saved);
-  const selected = useEngineStatuses(draft);
+  const endpoints = useEngineSettings((s) => s.endpoints);
+  const selected = useEngineStatuses(draft, endpoints);
   // The server's own status per task tells whether it can be picked at all.
-  const server = useEngineStatuses(DEFAULT_ENGINE_CHOICE);
+  const server = useEngineStatuses(DEFAULT_ENGINE_CHOICE, endpoints);
 
   const options = (task: EngineTask): SegmentOption<EngineId>[] =>
     ENGINE_ORDER.map((id) => {

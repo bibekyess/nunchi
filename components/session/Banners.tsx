@@ -83,7 +83,7 @@ export function Banners() {
     () => true,
   );
   // On-device engines keep working offline; only warn when something waits for the network.
-  const usesNetwork = useEngineSettings((s) => needsNetwork(s.choice));
+  const usesNetwork = useEngineSettings((s) => needsNetwork(s.choice, s.endpoints));
   const [token, setToken] = useState('');
 
   // The interruption notice clears itself after a while; listening already restarted.

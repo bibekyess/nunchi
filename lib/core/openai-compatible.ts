@@ -10,6 +10,14 @@ export const DEFAULT_CHAT_TIMEOUT_MS = 60_000;
 export const DEFAULT_SPEECH_TIMEOUT_MS = 30_000;
 export const MODELS_TIMEOUT_MS = 5_000;
 
+/**
+ * vLLM request fields that turn off Qwen3's reasoning, which its chat template enables by
+ * default; saves latency and tokens. Other servers ignore unknown fields.
+ */
+export const VLLM_NO_THINKING: Record<string, unknown> = {
+  chat_template_kwargs: { enable_thinking: false },
+};
+
 export interface OpenAICompatibleConfig {
   /** e.g. `http://localhost:11434/v1`; trailing slashes are ignored. */
   baseUrl: string;

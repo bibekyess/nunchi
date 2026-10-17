@@ -3,7 +3,7 @@
 import { ENGINE_LABELS } from '@/lib/engines/registry';
 import { ENGINE_TASKS, type EngineStatus, type EngineTask } from '@/lib/engines/types';
 import { useEngineStatuses } from '@/lib/engines/use-engine-status';
-import { useEngineChoice } from '@/lib/settings/engines';
+import { useEndpointSettings, useEngineChoice } from '@/lib/settings/engines';
 import { describeStatus } from './EngineStatusBadge';
 import { Badge, cx, type Tone } from './ui';
 
@@ -30,7 +30,7 @@ function word(status: EngineStatus): string {
 /** Health of the engines chosen for each task (the app's servers by default). */
 export function HealthDot({ compact = false }: { compact?: boolean }) {
   const choice = useEngineChoice();
-  const statuses = useEngineStatuses(choice);
+  const statuses = useEngineStatuses(choice, useEndpointSettings());
   const allServer = ENGINE_TASKS.every((t) => choice[t] === 'server');
 
   const known = ENGINE_TASKS.every((t) => statuses[t] !== null);

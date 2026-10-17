@@ -1,5 +1,12 @@
-import { getEngineChoice, type EngineChoice } from '@/lib/settings/engines';
 import { EngineError } from '@/lib/errors';
+import {
+  endpointFor,
+  getEndpointSettings,
+  getEngineChoice,
+  type EndpointSettings,
+  type EngineChoice,
+} from '@/lib/settings/engines';
+import { endpointSpeech, endpointSummary, endpointTranslate } from './endpoint';
 import { serverSpeech, serverSummary, serverTranslate } from './server';
 import {
   ENGINE_TASKS,
@@ -19,7 +26,7 @@ export const ENGINE_LABELS: Record<EngineId, string> = {
 };
 
 /** Engines that exist so far. The others are listed in settings as "coming soon". */
-export const BUILT_ENGINES: ReadonlySet<EngineId> = new Set<EngineId>(['server']);
+export const BUILT_ENGINES: ReadonlySet<EngineId> = new Set<EngineId>(['server', 'endpoint']);
 
 const SERVER: Engines = {
   speech: serverSpeech,
@@ -44,36 +51,42 @@ function notBuilt(id: EngineId) {
   return { id, needsNetwork: false, status, fail };
 }
 
-function speechFor(id: EngineId): SpeechEngine {
+function speechFor(id: EngineId, endpoints: EndpointSettings): SpeechEngine {
   if (id === 'server') return SERVER.speech;
+  if (id === 'endpoint') return endpointSpeech(endpointFor(endpoints, 'speech'));
   const { fail, ...base } = notBuilt(id);
   return { ...base, transcribe: fail };
 }
 
-function translateFor(id: EngineId): TranslateEngine {
+function translateFor(id: EngineId, endpoints: EndpointSettings): TranslateEngine {
   if (id === 'server') return SERVER.translate;
+  if (id === 'endpoint') return endpointTranslate(endpointFor(endpoints, 'translate'));
   const { fail, ...base } = notBuilt(id);
   return { ...base, translate: fail };
 }
 
-function summaryFor(id: EngineId): SummaryEngine {
+function summaryFor(id: EngineId, endpoints: EndpointSettings): SummaryEngine {
   if (id === 'server') return SERVER.summary;
+  if (id === 'endpoint') return endpointSummary(endpointFor(endpoints, 'summary'));
   const { fail, ...base } = notBuilt(id);
   return { ...base, summarize: fail };
 }
 
-/** The engines for a given choice of engine per task. */
-export function buildEngines(choice: EngineChoice): Engines {
+/** The engines for a given choice of engine per task (endpoints default to the saved ones). */
+export function buildEngines(
+  choice: EngineChoice,
+  endpoints: EndpointSettings = getEndpointSettings(),
+): Engines {
   return {
-    speech: speechFor(choice.speech),
-    translate: translateFor(choice.translate),
-    summary: summaryFor(choice.summary),
+    speech: speechFor(choice.speech, endpoints),
+    translate: translateFor(choice.translate, endpoints),
+    summary: summaryFor(choice.summary, endpoints),
   };
 }
 
 /** The engines currently chosen in settings. Read per job, so a change applies to the next line. */
 export function getEngines(): Engines {
-  return buildEngines(getEngineChoice());
+  return buildEngines(getEngineChoice(), getEndpointSettings());
 }
 
 /** The engine for one task, as currently chosen. */
@@ -82,7 +95,10 @@ export function getEngine<T extends EngineTask>(task: T): Engines[T] {
 }
 
 /** Whether any chosen engine needs the network (drives the offline notice). */
-export function needsNetwork(choice: EngineChoice): boolean {
-  const engines = buildEngines(choice);
+export function needsNetwork(
+  choice: EngineChoice,
+  endpoints: EndpointSettings = getEndpointSettings(),
+): boolean {
+  const engines = buildEngines(choice, endpoints);
   return ENGINE_TASKS.some((task) => engines[task].needsNetwork);
 }
