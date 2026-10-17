@@ -2,7 +2,7 @@
 
 import { TriangleAlert, KeyRound, MonitorX, RotateCw, WifiOff, X } from 'lucide-react';
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { setAccessToken } from '@/lib/api-client';
+import { setAccessToken } from '@/lib/engines/server';
 import { useSessionStore } from '@/lib/store/session-store';
 import { Button, cx, IconButton, Input } from '../ui';
 import { useController } from './controller-context';

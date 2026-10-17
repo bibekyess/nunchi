@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, type TranslateRequest } from '@/lib/api-client';
+import { ApiError } from '@/lib/engines/server';
+import type { TranslateRequest } from '@/lib/engines/types';
 import { PipelineQueue, type QueueDeps } from '@/lib/pipeline/queue';
 import { sessionStore } from '@/lib/store/session-store';
 import type { TranscriptionResult } from '@/lib/types';

@@ -1,4 +1,3 @@
-import { transcribeClip, translateStream } from './api-client';
 import { MicError, saveDeviceId, savedDeviceId, savedNoiseSuppression } from './audio/devices';
 import {
   micEnded,
@@ -9,7 +8,7 @@ import {
 } from './audio/sources';
 import { SpeechRecorder } from './audio/vad';
 import { loadVadSettings, type VadSettings } from './audio/vad-settings';
-import { encodeWav } from './audio/wav';
+import { serverSpeech, serverTranslate } from './engines/server';
 import { PipelineQueue } from './pipeline/queue';
 import { sessionStore } from './store/session-store';
 import { ScreenWakeLock } from './wake-lock';
@@ -39,8 +38,8 @@ export class SessionController {
   constructor() {
     this.queue = new PipelineQueue({
       getState: sessionStore.getState,
-      transcribe: (audio, opts) => transcribeClip(encodeWav(audio), opts),
-      translate: translateStream,
+      transcribe: (audio, opts) => serverSpeech.transcribe(audio, opts),
+      translate: (request, onDelta, signal) => serverTranslate.translate(request, onDelta, signal),
       newId: () => crypto.randomUUID(),
       sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
       waitForOnline,

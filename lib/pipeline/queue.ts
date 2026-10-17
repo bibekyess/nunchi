@@ -1,4 +1,4 @@
-import type { TranslateRequest } from '@/lib/api-client';
+import type { TranslateRequest } from '@/lib/engines/types';
 import type { Clip } from '@/lib/audio/vad';
 import { EngineError } from '@/lib/errors';
 import type { SessionState } from '@/lib/store/session-store';

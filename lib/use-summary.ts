@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { summarizeStream } from '@/lib/api-client';
+import { serverSummary } from '@/lib/engines/server';
 import { EngineError } from '@/lib/errors';
 import type { Lang } from '@/lib/languages';
 import { sessionStore, useSessionStore } from '@/lib/store/session-store';
@@ -40,7 +40,7 @@ export function useSummary() {
       setError('');
       try {
         let text = '';
-        text = await summarizeStream(
+        text = await serverSummary.summarize(
           {
             utterances: transcriptLines(),
             glossary: session.glossary,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { fetchHealth, type HealthStatus } from '@/lib/api-client';
+import { fetchHealth, type HealthStatus } from '@/lib/engines/server';
 import { Badge, cx } from './ui';
 
 type Health = HealthStatus | { failed: true } | null;
