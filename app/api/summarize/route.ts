@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { startSummary, summaryLines, type SummaryRun } from '@/lib/core/summarize';
-import { LANG_CODES } from '@/lib/languages';
+import { glossarySchema, langSchema, meetingContextSchema } from '@/lib/schemas';
 import { checkAccess } from '@/lib/server/auth';
 import {
   errorResponse,
@@ -25,12 +25,9 @@ const bodySchema = z.object({
     )
     .min(1)
     .max(5000),
-  glossary: z
-    .array(z.object({ term: z.string().max(100), translation: z.string().max(200).optional() }))
-    .max(200)
-    .default([]),
-  meetingContext: z.string().max(1000).optional(),
-  outputLang: z.enum(LANG_CODES),
+  glossary: glossarySchema,
+  meetingContext: meetingContextSchema,
+  outputLang: langSchema,
 });
 
 export async function POST(request: Request) {

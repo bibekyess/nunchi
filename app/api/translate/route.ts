@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { startTranslation, type TranslationRun } from '@/lib/core/translate';
-import { LANG_CODES } from '@/lib/languages';
+import {
+  glossarySchema,
+  langSchema,
+  meetingContextSchema,
+  translationContextSchema,
+} from '@/lib/schemas';
 import { checkAccess } from '@/lib/server/auth';
 import { errorResponse, parseJsonBody, streamText, toUpstreamError } from '@/lib/server/http';
 import { serverChat } from '@/lib/server/llm';
@@ -8,21 +13,13 @@ import { logTiming, ms, startTimer } from '@/lib/server/timing';
 
 export const maxDuration = 60;
 
-const lang = z.enum(LANG_CODES);
-
 const bodySchema = z.object({
   text: z.string().trim().min(1).max(2000),
-  sourceLang: lang,
-  targetLang: lang,
-  context: z
-    .array(z.object({ source: z.string().max(2000), translation: z.string().max(4000) }))
-    .max(5)
-    .default([]),
-  glossary: z
-    .array(z.object({ term: z.string().max(100), translation: z.string().max(200).optional() }))
-    .max(200)
-    .default([]),
-  meetingContext: z.string().max(1000).optional(),
+  sourceLang: langSchema,
+  targetLang: langSchema,
+  context: translationContextSchema,
+  glossary: glossarySchema,
+  meetingContext: meetingContextSchema,
   /** Second attempt after an empty or untranslated result: answer deterministically. */
   retry: z.boolean().optional(),
 });

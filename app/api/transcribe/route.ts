@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { transcribeWithFallback } from '@/lib/core/transcribe';
-import { LANG_CODES } from '@/lib/languages';
+import { langOrAutoSchema } from '@/lib/schemas';
 import { checkAccess } from '@/lib/server/auth';
 import { errorResponse, jsonError } from '@/lib/server/http';
 import { serverSpeech } from '@/lib/server/speaches';
@@ -11,7 +11,7 @@ export const maxDuration = 60;
 const MAX_AUDIO_BYTES = 2 * 1024 * 1024; // ~65 s of 16 kHz 16-bit mono; clips are capped at 30 s
 
 const fieldsSchema = z.object({
-  language: z.enum([...LANG_CODES, 'auto']).default('auto'),
+  language: langOrAutoSchema.default('auto'),
   prompt: z.string().max(200).optional(),
 });
 
