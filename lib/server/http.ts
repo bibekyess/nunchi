@@ -3,6 +3,7 @@ import type { z } from 'zod';
 import { EndpointError } from '@/lib/core/openai-compatible';
 import { EngineError } from '@/lib/errors';
 import type { ApiErrorBody } from '@/lib/types';
+import { withIdleTimeout } from '@/lib/util/streams';
 import type { Service } from './env';
 import { logTiming, ms, type Field } from './timing';
 
@@ -103,6 +104,13 @@ export async function parseJsonBody<S extends z.ZodType>(
   return { data: parsed.data };
 }
 
+/**
+ * Longest gap between pieces of a streamed answer. A backstop: the model client's own limits
+ * (60 s per call, 30 s between pieces) are shorter, but the pipeline logic between them (e.g.
+ * the translation's empty-answer retry) must not hang a response either.
+ */
+export const STREAM_IDLE_MS = 90_000;
+
 export interface StreamTextOptions {
   route: string;
   text: AsyncIterable<string>;
@@ -115,11 +123,16 @@ export interface StreamTextOptions {
   fields: (t: { ttft: Field; total: Field }) => Record<string, Field>;
   /** Extra log fields on success, given the number of characters sent. */
   okFields?: (outChars: number) => Record<string, Field>;
+  /** Longest gap between pieces (default `STREAM_IDLE_MS`). */
+  idleMs?: number;
+  /** Time allowed for the first piece (default `idleMs`). */
+  firstMs?: number;
 }
 
 /**
  * Streams `text` as a plain-text response and logs one timing line when it ends. Errors after
- * the first byte can't become a JSON error any more; they end the stream and are logged.
+ * the first byte can't become a JSON error any more; they end the stream and are logged. Text
+ * that stops coming ends the response as an upstream timeout and stops the upstream.
  */
 export function streamText({
   route,
@@ -129,6 +142,8 @@ export function streamText({
   elapsed,
   fields,
   okFields,
+  idleMs = STREAM_IDLE_MS,
+  firstMs,
 }: StreamTextOptions): Response {
   const encoder = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
@@ -136,8 +151,14 @@ export function streamText({
       let outChars = 0;
       let ttftMs: number | undefined;
       const timings = () => fields({ ttft: ms(ttftMs), total: ms(elapsed()) });
+      const pieces = withIdleTimeout(text, idleMs, {
+        firstMs,
+        signal,
+        onTimeout: abort,
+        error: () => new EngineError('timeout', `The ${route} stream stalled.`),
+      });
       try {
-        for await (const piece of text) {
+        for await (const piece of pieces) {
           if (!piece) continue;
           ttftMs ??= elapsed();
           outChars += piece.length;

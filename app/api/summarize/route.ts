@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { startSummary, summaryLines, type SummaryRun } from '@/lib/core/summarize';
+import {
+  startSummary,
+  SUMMARY_TIMEOUT_MS,
+  summaryLines,
+  type SummaryRun,
+} from '@/lib/core/summarize';
 import { glossarySchema, langSchema, meetingContextSchema } from '@/lib/schemas';
 import { checkAccess } from '@/lib/server/auth';
 import { isConfigured } from '@/lib/server/env';
@@ -71,6 +76,8 @@ export async function POST(request: Request) {
       elapsed,
       fields: ({ ttft, total }) => ({ parts, open: ms(openMs), ttft, total, lines: lines.length }),
       okFields: (outChars) => ({ out: `${outChars}ch` }),
+      // The merge prompt is long; its first piece may take the model's whole call timeout.
+      firstMs: SUMMARY_TIMEOUT_MS + 30_000,
     });
   } catch (err) {
     logTiming('summarize', 'error', { total: ms(elapsed()) });

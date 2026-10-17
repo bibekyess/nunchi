@@ -4,11 +4,17 @@ import { EngineError, type EngineErrorKind } from '@/lib/errors';
 import type { EngineId } from '@/lib/engines/types';
 import { normalizeWhisperLanguage } from '@/lib/languages';
 import type { TranscriptionResult } from '@/lib/types';
+import { withIdleTimeout } from '@/lib/util/streams';
 import type { ChatMessage, ChatModel, ChatOptions, ChatStream, SpeechModel } from './models';
 
 export const DEFAULT_CHAT_TIMEOUT_MS = 60_000;
 export const DEFAULT_SPEECH_TIMEOUT_MS = 30_000;
 export const MODELS_TIMEOUT_MS = 5_000;
+/**
+ * Longest gap between pieces of a streamed answer once it has started. The first piece may
+ * take the call's whole timeout (prompt processing); after that a silent stream has stalled.
+ */
+export const DEFAULT_STREAM_IDLE_MS = 30_000;
 
 /**
  * vLLM request fields that turn off Qwen3's reasoning, which its chat template enables by
@@ -30,6 +36,8 @@ export interface OpenAICompatibleConfig {
   extraBody?: Record<string, unknown>;
   /** Time allowed until the response starts, unless a call overrides it. */
   timeoutMs?: number;
+  /** Longest gap between streamed pieces (see `DEFAULT_STREAM_IDLE_MS`). */
+  streamIdleMs?: number;
   /** Tags errors with the engine they came from. */
   engine?: EngineId;
   /** Test hook. */
@@ -205,7 +213,7 @@ export function createOpenAICompatible(config: OpenAICompatibleConfig): OpenAICo
 
   /**
    * One request. The timeout covers the wait for the response to start (as the OpenAI SDK
-   * does); once a stream is flowing only `signal` and `abort` stop it. Rejects with an
+   * does); a flowing stream is guarded by the idle limit instead (see `chat.stream`). Rejects with an
    * AbortError when `signal` aborts, so callers can tell a cancel from a failure. Call
    * `release` once the body has been read.
    */
@@ -306,6 +314,7 @@ export function createOpenAICompatible(config: OpenAICompatibleConfig): OpenAICo
 
   const chat: ChatModel = {
     async stream(messages, opts): Promise<ChatStream> {
+      const timeoutMs = timeoutFor(opts, DEFAULT_CHAT_TIMEOUT_MS);
       const { res, abort, release } = await request(
         '/chat/completions',
         {
@@ -313,14 +322,28 @@ export function createOpenAICompatible(config: OpenAICompatibleConfig): OpenAICo
           headers: headers({ 'Content-Type': 'application/json', Accept: 'text/event-stream' }),
           body: chatBody(messages, opts, true),
         },
-        { signal: opts.signal, timeoutMs: timeoutFor(opts, DEFAULT_CHAT_TIMEOUT_MS) },
+        { signal: opts.signal, timeoutMs },
       );
       const body = res.body;
+      const events = (sse: ReadableStream<Uint8Array>) =>
+        withIdleTimeout(parseSse(sse), config.streamIdleMs ?? DEFAULT_STREAM_IDLE_MS, {
+          firstMs: timeoutMs,
+          signal: opts.signal,
+          onTimeout: abort,
+          error: () =>
+            new EndpointError(
+              'timeout',
+              `${host} stopped answering mid-stream.`,
+              undefined,
+              'StreamIdle',
+              engine,
+            ),
+        });
       return {
         async *[Symbol.asyncIterator]() {
           if (!body) return;
           try {
-            for await (const payload of parseSse(body)) {
+            for await (const payload of events(body)) {
               let chunk: ChatChunk;
               try {
                 chunk = JSON.parse(payload) as ChatChunk;
