@@ -71,6 +71,11 @@ test('live session: speech becomes ordered bilingual blocks', async ({ page }) =
 
   await page.screenshot({ path: 'test-results/session.png', fullPage: false });
 
+  // Stop submits the speech in progress; let every line settle before counting what's saved.
+  await expect(
+    page.locator('[data-status="transcribing"], [data-status="translating"]'),
+  ).toHaveCount(0, { timeout: 30_000 });
+
   // Phase 3: the session is saved on the device and survives a reload.
   const savedSeqs = await done.evaluateAll((els) => els.map((e) => e.getAttribute('data-seq')));
   const firstTranslation = await first.locator('.translation-text').textContent();
