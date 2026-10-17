@@ -7,7 +7,9 @@ async function openProcessing(page: Page) {
   return dialog;
 }
 
-test('processing: every task defaults to the server; others are coming soon', async ({ page }) => {
+test('processing: every task defaults to the server; on-device is coming soon', async ({
+  page,
+}) => {
   await page.goto('/');
   await expect(page.getByText('Servers ready')).toBeVisible();
 
@@ -15,7 +17,7 @@ test('processing: every task defaults to the server; others are coming soon', as
   for (const task of ['Speech to text', 'Translation', 'Summary']) {
     const group = dialog.getByRole('radiogroup', { name: task });
     await expect(group.getByRole('radio', { name: 'Server', exact: true })).toBeChecked();
-    await expect(group.getByRole('radio', { name: 'Custom (Coming soon)' })).toBeDisabled();
+    await expect(group.getByRole('radio', { name: 'Custom', exact: true })).toBeEnabled();
     await expect(group.getByRole('radio', { name: 'This device (Coming soon)' })).toBeDisabled();
   }
   await expect(dialog.getByText('Ready')).toHaveCount(3);

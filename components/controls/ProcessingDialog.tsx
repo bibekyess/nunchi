@@ -1,17 +1,22 @@
 'use client';
 
 import { Laptop, Link, Server } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { BUILT_ENGINES, ENGINE_LABELS } from '@/lib/engines/registry';
-import type { EngineId, EngineTask } from '@/lib/engines/types';
+import { ENGINE_TASKS, type EngineId, type EngineTask } from '@/lib/engines/types';
 import { useEngineStatuses } from '@/lib/engines/use-engine-status';
 import {
+  cleanBaseUrl,
   DEFAULT_ENGINE_CHOICE,
+  endpointProblem,
   useEngineSettings,
-  type EngineChoice,
+  type EndpointConfig,
+  type EndpointSettings,
+  type EngineSettings,
 } from '@/lib/settings/engines';
 import { EngineStatusBadge } from '../EngineStatusBadge';
-import { Button, Dialog, SegmentedControl, type SegmentOption } from '../ui';
+import { Button, Dialog, SegmentedControl, Switch, type SegmentOption } from '../ui';
+import { EndpointFields } from './EndpointFields';
 
 // Icons drop out on the narrowest phones so the three labels still fit on one row.
 const ICON = 'h-4 w-4 max-[400px]:hidden';
@@ -29,15 +34,60 @@ const TASKS: { task: EngineTask; title: string; hint: string }[] = [
 
 const ENGINE_ORDER: EngineId[] = ['server', 'endpoint', 'device'];
 
+/** Status checks wait until typing pauses, so they don't hit the server on every key. */
+const STATUS_DEBOUNCE_MS = 700;
+
+/**
+ * Which endpoint config a task's fields edit: the summary edits the translation endpoint while
+ * it borrows it, which is also what it will use.
+ */
+function editedEndpoint(
+  endpoints: EndpointSettings,
+  task: EngineTask,
+): 'speech' | 'translate' | 'summary' {
+  return task === 'summary' && endpoints.summary.sameAsTranslate ? 'translate' : task;
+}
+
+/** What still blocks a draft endpoint, or null. Mirrors what saving keeps (see sanitize). */
+export function draftProblem(config: EndpointConfig): string | null {
+  if (config.baseUrl.trim() && !cleanBaseUrl(config.baseUrl)) {
+    return 'Use a full URL starting with http:// or https://.';
+  }
+  return endpointProblem({
+    ...config,
+    baseUrl: cleanBaseUrl(config.baseUrl),
+    model: config.model.trim(),
+  });
+}
+
+function useDebounced<T>(value: T, ms: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return debounced;
+}
+
 /** Where each task runs: the app's server, a custom endpoint, or this device. */
 export function ProcessingDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const saved = useEngineSettings((s) => s.choice);
-  const setChoice = useEngineSettings((s) => s.setChoice);
-  const [draft, setDraft] = useState<EngineChoice>(saved);
-  const endpoints = useEngineSettings((s) => s.endpoints);
-  const selected = useEngineStatuses(draft, endpoints);
+  const savedChoice = useEngineSettings((s) => s.choice);
+  const savedEndpoints = useEngineSettings((s) => s.endpoints);
+  const setSettings = useEngineSettings((s) => s.setSettings);
+  const [draft, setDraft] = useState<EngineSettings>({
+    choice: savedChoice,
+    endpoints: savedEndpoints,
+  });
+  const [showProblems, setShowProblems] = useState(false);
+  const checkedEndpoints = useDebounced(draft.endpoints, STATUS_DEBOUNCE_MS);
+  const selected = useEngineStatuses(draft.choice, checkedEndpoints);
   // The server's own status per task tells whether it can be picked at all.
-  const server = useEngineStatuses(DEFAULT_ENGINE_CHOICE, endpoints);
+  const server = useEngineStatuses(DEFAULT_ENGINE_CHOICE, savedEndpoints);
+
+  const { choice, endpoints } = draft;
+
+  const problemFor = (task: EngineTask) =>
+    choice[task] === 'endpoint' ? draftProblem(endpoints[editedEndpoint(endpoints, task)]) : null;
 
   const options = (task: EngineTask): SegmentOption<EngineId>[] =>
     ENGINE_ORDER.map((id) => {
@@ -52,8 +102,18 @@ export function ProcessingDialog({ open, onClose }: { open: boolean; onClose: ()
       };
     });
 
+  const setEndpoint = (key: keyof EndpointSettings, config: EndpointConfig) =>
+    setDraft((d) => ({
+      ...d,
+      endpoints: { ...d.endpoints, [key]: { ...d.endpoints[key], ...config } },
+    }));
+
   const save = () => {
-    setChoice(draft);
+    if (ENGINE_TASKS.some((task) => problemFor(task))) {
+      setShowProblems(true);
+      return;
+    }
+    setSettings(draft);
     onClose();
   };
 
@@ -78,9 +138,13 @@ export function ProcessingDialog({ open, onClose }: { open: boolean; onClose: ()
       </p>
 
       {TASKS.map(({ task, title, hint }) => {
-        const unavailable =
-          (draft[task] === 'server' && server[task]?.state === 'not_configured') ||
-          !BUILT_ENGINES.has(draft[task]);
+        const engine = choice[task];
+        const notSetUp = engine === 'server' && server[task]?.state === 'not_configured';
+        const custom = engine === 'endpoint';
+        // The summary can share the translation endpoint only while translation uses one.
+        const canShare = task === 'summary' && choice.translate === 'endpoint';
+        const sharing = canShare && endpoints.summary.sameAsTranslate;
+        const key = editedEndpoint(endpoints, task);
         return (
           <section key={task} className="mt-6">
             <div className="mb-2.5 flex items-start justify-between gap-3">
@@ -92,18 +156,54 @@ export function ProcessingDialog({ open, onClose }: { open: boolean; onClose: ()
             </div>
             <SegmentedControl
               label={title}
-              value={draft[task]}
-              onChange={(id) => setDraft((d) => ({ ...d, [task]: id }))}
+              value={engine}
+              onChange={(id) => setDraft((d) => ({ ...d, choice: { ...d.choice, [task]: id } }))}
               options={options(task)}
               variant="soft"
               tone="accent"
               stretch
             />
-            {unavailable && (
+            {(notSetUp || !BUILT_ENGINES.has(engine)) && (
               <p className="mt-2 animate-fade-in text-sm text-warn-ink" role="note">
-                {draft[task] === 'server'
+                {engine === 'server'
                   ? 'This server has no model for this task.'
-                  : `${ENGINE_LABELS[draft[task]]} isn't available yet, so this task won't run. Choose Server.`}
+                  : `${ENGINE_LABELS[engine]} isn't available yet, so this task won't run. Choose Server.`}
+              </p>
+            )}
+            {custom && canShare && (
+              <Switch
+                className="mt-3"
+                label="Same as translation"
+                description={sharing ? 'Uses the translation server and model above.' : undefined}
+                checked={endpoints.summary.sameAsTranslate}
+                onChange={(sameAsTranslate) =>
+                  setDraft((d) => ({
+                    ...d,
+                    endpoints: {
+                      ...d.endpoints,
+                      summary: {
+                        ...d.endpoints.summary,
+                        sameAsTranslate,
+                        // Start from the translation endpoint when splitting off.
+                        ...(sameAsTranslate ? {} : d.endpoints.translate),
+                      },
+                    },
+                  }))
+                }
+              />
+            )}
+            {custom && !sharing && (
+              <EndpointFields
+                task={task}
+                value={endpoints[key]}
+                onChange={(config) => setEndpoint(key, config)}
+                problem={problemFor(task)}
+                showProblem={showProblems}
+              />
+            )}
+            {custom && sharing && showProblems && problemFor(task) && (
+              <p className="mt-2 text-sm text-danger-ink" role="alert">
+                Set up the translation endpoint above.
               </p>
             )}
           </section>
@@ -111,7 +211,8 @@ export function ProcessingDialog({ open, onClose }: { open: boolean; onClose: ()
       })}
 
       <p className="mt-6 rounded-2xl bg-surface-2 px-3.5 py-2.5 text-sm text-ink-muted">
-        Custom endpoints (your own OpenAI-compatible server) and on-device models are coming soon.
+        Custom calls your own OpenAI-compatible server (e.g. Speaches, Ollama, LM Studio) straight
+        from this browser. On-device models are coming soon.
       </p>
     </Dialog>
   );
