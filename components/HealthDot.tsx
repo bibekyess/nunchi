@@ -13,7 +13,7 @@ const TASK_NAMES: Record<EngineTask, string> = {
   summary: 'Summary',
 };
 
-/** One word per task for the summary label, e.g. "Speech ok · Translation down". */
+/** A word or two per task for the label, e.g. "Translation down · Summary down". */
 function word(status: EngineStatus): string {
   switch (status.state) {
     case 'ready':
@@ -51,7 +51,10 @@ export function HealthDot({ compact = false }: { compact?: boolean }) {
       ? allServer
         ? 'Servers ready'
         : 'Ready'
-      : ENGINE_TASKS.map((t) => `${TASK_NAMES[t]} ${word(statuses[t]!)}`).join(' · ');
+      : // Only the tasks that need attention, so the label stays short on phones.
+        ENGINE_TASKS.filter((t) => statuses[t]!.state !== 'ready')
+          .map((t) => `${TASK_NAMES[t]} ${word(statuses[t]!)}`)
+          .join(' · ');
   // Tooltip: which engine does each task and how it is.
   const detail = ENGINE_TASKS.map(
     (t) => `${TASK_NAMES[t]} (${ENGINE_LABELS[choice[t]]}): ${describeStatus(statuses[t]).text}`,
@@ -59,8 +62,16 @@ export function HealthDot({ compact = false }: { compact?: boolean }) {
 
   if (!compact) {
     return (
-      <Badge tone={tone} dot pulse={!known} role="status" title={detail} size="md">
-        {label}
+      <Badge
+        tone={tone}
+        dot
+        pulse={!known}
+        role="status"
+        title={detail}
+        size="md"
+        className="min-w-0"
+      >
+        <span className="truncate">{label}</span>
       </Badge>
     );
   }

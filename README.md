@@ -33,6 +33,10 @@ The implementation plan lives in the shared plan doc; decisions made while build
   with the session. Search, Markdown export, Copy all and the installable PWA were left out
   on purpose: the goal is following Korean meetings, not archiving or sharing them.
 - **Phases 4–5 (speaker labels, share links, server storage): not planned for now.**
+- **Engines (see [`docs/ENGINES-PLAN.md`](docs/ENGINES-PLAN.md)): Phases 0–1 done.** A
+  **Processing** dialog (home header and the session ⋯ menu) picks where speech to text,
+  translation and summary run. Only Server works today; Custom endpoint and This device are
+  listed as coming soon.
 
 ## Setup
 

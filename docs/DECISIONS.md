@@ -2,6 +2,48 @@
 
 Changes to, or details not covered by, the implementation plan. Newest first.
 
+## 2026-10-17 — Engines Phase 1
+
+Each task (speech to text, translation, summary) now runs on an engine chosen per device. Only
+the server engine exists; with the default choice (all server) the app behaves as before, and
+`pnpm smoke` against `pnpm mock` matches the Phase 0 output.
+
+- **Engines** (`lib/engines/types.ts`): `SpeechEngine`, `TranslateEngine`, `SummaryEngine`, each
+  with `id`, `needsNetwork` and `status()` (`ready` / `not_configured` / `unavailable` /
+  `error`, with `needsPasscode` for a missing passcode). The server engine
+  (`lib/engines/server.ts`, formerly `lib/api-client.ts`) encodes WAV itself, and its three
+  engines share one `/api/health` request (2 s cache, a failed check is not reused).
+- **Choice** (`lib/settings/engines.ts`): `{ speech, translate, summary }` under
+  `nunchi.engines`, validated per task with zod (bad values fall back to `server`), in a small
+  zustand store that follows other tabs through the `storage` event. `useEngineChoice()`
+  renders the default until hydration so server and client HTML match. Endpoint settings are
+  not stored yet; Phase 2 adds them.
+- **No silent fallback:** a choice of an engine that isn't built yet (`endpoint`, `device`)
+  gets a stand-in engine whose calls fail with an `unavailable` error that isn't retried.
+  Work never goes to the server instead, since someone who picked on-device processing may not
+  want their audio sent anywhere.
+- **The queue reads `getEngines()` for each line** (`QueueDeps.engines`), so a switch applies
+  from the next line, and waits for the network only when that line's engine needs it.
+  Summaries use the summary engine. `EngineError.engine` records which engine failed; only a
+  server `auth` error opens the passcode banner (`needsPasscode`).
+- **Optional upstreams:** `SPEACHES_BASE_URL` and `LLM_BASE_URL` + `LLM_MODEL` (set together)
+  may be empty. Routes for an unset service answer `503 not_configured` after the passcode
+  check, `/api/health` reports `not_configured` without pinging, and the client maps it to an
+  `unavailable` error that isn't retried.
+- **Processing dialog** (session ⋯ menu and a button in the home header): Server / Custom /
+  This device per task with a live status badge. Custom and This device are disabled with
+  "Coming soon"; Server is disabled for a task the server isn't set up for. Saved with Save,
+  like Audio. `SegmentedControl` options can be disabled (skipped by arrow keys, and the tab
+  stop moves to the first selectable option).
+- **Health label:** "Servers ready" when every task is on the server and ready; otherwise only
+  the tasks that need attention (e.g. "Speech not set up"), truncated on narrow phones, with
+  each task's engine and status in the tooltip. Warn tone for not set up / coming soon. The
+  offline banner only shows while a chosen engine needs the network.
+- **`Session.engines`** records the choice when listening starts or resumes, for later quality
+  comparisons. It isn't indexed, so the Dexie schema stays at version 1.
+- **Aborted transcriptions** are logged as `aborted` with an empty 499, like translate and
+  summarize, instead of `speaches upstream_error … ResponseAborted`.
+
 ## 2026-10-17 — Engines Phase 0
 
 Cleanup before switchable engines (see `docs/ENGINES-PLAN.md`). No behavior change: API
