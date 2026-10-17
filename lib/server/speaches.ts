@@ -1,6 +1,7 @@
 import 'server-only';
 import type { SpeechModel } from '@/lib/core/models';
-import { normalizeWhisperLanguage, type Lang } from '@/lib/languages';
+import { parseTranscription } from '@/lib/core/openai-compatible';
+import type { Lang } from '@/lib/languages';
 import type { TranscriptionResult } from '@/lib/types';
 import { getEnv } from './env';
 import { isTimeoutError, NotConfiguredError, UpstreamError } from './http';
@@ -10,13 +11,6 @@ const TRANSCRIBE_TIMEOUT_MS = 30_000;
 function authHeaders(): Record<string, string> {
   const key = getEnv().SPEACHES_API_KEY;
   return key ? { Authorization: `Bearer ${key}` } : {};
-}
-
-interface VerboseJson {
-  text?: string;
-  language?: string;
-  duration?: number;
-  segments?: { text?: string; no_speech_prob?: number; avg_logprob?: number }[];
 }
 
 export interface TranscribeOptions {
@@ -62,17 +56,7 @@ export async function transcribe(
     throw new UpstreamError('speaches', 'upstream_error', res.status, detail);
   }
 
-  const data = (await res.json()) as VerboseJson;
-  return {
-    text: (data.text ?? '').trim(),
-    language: normalizeWhisperLanguage(data.language),
-    durationMs: Math.round((data.duration ?? 0) * 1000),
-    segments: (data.segments ?? []).map((s) => ({
-      text: (s.text ?? '').trim(),
-      noSpeechProb: s.no_speech_prob ?? 0,
-      avgLogprob: s.avg_logprob ?? 0,
-    })),
-  };
+  return parseTranscription(await res.json());
 }
 
 /** The Speaches server as a `SpeechModel`. */
