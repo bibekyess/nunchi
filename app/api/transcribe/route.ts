@@ -64,10 +64,16 @@ export async function POST(request: Request) {
     });
     return Response.json(result);
   } catch (err) {
-    logTiming('transcribe', request.signal.aborted ? 'aborted' : 'error', {
+    const fields = {
       total: ms(elapsed()),
       size: audioBytes === undefined ? undefined : `${Math.round(audioBytes / 1024)}KB`,
-    });
+    };
+    // The client went away (stopped, navigated); the cut-off upstream call isn't an error.
+    if (request.signal.aborted) {
+      logTiming('transcribe', 'aborted', fields);
+      return new Response(null, { status: 499 });
+    }
+    logTiming('transcribe', 'error', fields);
     return errorResponse('transcribe', err);
   }
 }

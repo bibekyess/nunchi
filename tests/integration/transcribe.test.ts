@@ -106,6 +106,37 @@ describe('POST /api/transcribe', () => {
     spy.mockRestore();
   });
 
+  it('logs a client abort as aborted, not as an upstream error', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const client = new AbortController();
+    server.use(
+      http.post(`${SPEACHES}/audio/transcriptions`, async () => {
+        client.abort(); // the user stops while Speaches is still working
+        await new Promise((r) => setTimeout(r, 50));
+        return HttpResponse.json(verbose('네.', 'ko'));
+      }),
+    );
+    const form = new FormData();
+    form.append('audio', wavBlob());
+    const res = await POST(
+      new Request('http://app.test/api/transcribe', {
+        method: 'POST',
+        body: form,
+        signal: client.signal,
+      }),
+    );
+
+    expect(res.status).toBe(499);
+    const lines = [...error.mock.calls, ...warn.mock.calls].map((c) => c.join(' '));
+    expect(lines.some((l) => l.includes('upstream_error'))).toBe(false);
+    expect(info.mock.calls.some((c) => String(c[0]).startsWith('[transcribe] aborted'))).toBe(true);
+    error.mockRestore();
+    warn.mockRestore();
+    info.mockRestore();
+  });
+
   it('requires the access token when one is configured', async () => {
     vi.stubEnv('APP_ACCESS_TOKEN', 'letmein');
     resetEnvCache();
