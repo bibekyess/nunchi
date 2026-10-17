@@ -1,3 +1,4 @@
+import { readString, writeString } from '@/lib/storage';
 import { MicError, openMicrophone } from './devices';
 
 /** Where speech comes from: the room (mic), a browser tab / the system, or both mixed. */
@@ -6,21 +7,13 @@ export type AudioSource = 'mic' | 'tab' | 'mix';
 const SOURCE_KEY = 'nunchi.audioSource';
 
 export function savedAudioSource(): AudioSource {
-  try {
-    const v = localStorage.getItem(SOURCE_KEY);
-    if (v === 'tab' || v === 'mix') return canCaptureTabAudio() ? v : 'mic';
-  } catch {
-    // storage unavailable
-  }
+  const v = readString(SOURCE_KEY);
+  if (v === 'tab' || v === 'mix') return canCaptureTabAudio() ? v : 'mic';
   return 'mic';
 }
 
 export function saveAudioSource(source: AudioSource) {
-  try {
-    localStorage.setItem(SOURCE_KEY, source);
-  } catch {
-    // storage unavailable (private mode); the choice just isn't remembered
-  }
+  writeString(SOURCE_KEY, source);
 }
 
 interface UADataLike {

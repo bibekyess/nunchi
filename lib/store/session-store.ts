@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { MODE_PRESETS } from '@/lib/pipeline/direction';
+import { readJson, writeJson } from '@/lib/storage';
 import type { GlossaryEntry, Lang, Session, TranslationMode, Utterance } from '@/lib/types';
 
 export type RecorderState = 'idle' | 'starting' | 'listening' | 'paused' | 'error';
@@ -50,25 +51,16 @@ export interface SessionState {
 /** Remembered across sessions on this device: the last glossary pre-fills new sessions. */
 const LAST_GLOSSARY_KEY = 'nunchi.lastGlossary';
 
-function loadLastGlossary(): Pick<Session, 'glossary' | 'meetingContext'> {
-  try {
-    const raw = localStorage.getItem(LAST_GLOSSARY_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Pick<Session, 'glossary' | 'meetingContext'>;
-      if (Array.isArray(parsed.glossary)) return parsed;
-    }
-  } catch {
-    // ignore
-  }
-  return { glossary: [] };
+type LastGlossary = Pick<Session, 'glossary' | 'meetingContext'>;
+
+function loadLastGlossary(): LastGlossary {
+  return readJson(LAST_GLOSSARY_KEY, (raw) =>
+    raw && Array.isArray((raw as LastGlossary).glossary) ? (raw as LastGlossary) : { glossary: [] },
+  );
 }
 
-function saveLastGlossary(value: Pick<Session, 'glossary' | 'meetingContext'>) {
-  try {
-    localStorage.setItem(LAST_GLOSSARY_KEY, JSON.stringify(value));
-  } catch {
-    // ignore
-  }
+function saveLastGlossary(value: LastGlossary) {
+  writeJson(LAST_GLOSSARY_KEY, value);
 }
 
 export function defaultTitle(date = new Date()): string {

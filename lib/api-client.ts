@@ -1,3 +1,4 @@
+import { readString, writeString } from './storage';
 import type {
   ApiErrorBody,
   GlossaryEntry,
@@ -10,20 +11,11 @@ const TOKEN_KEY = 'nunchi.accessToken';
 export const ACCESS_TOKEN_HEADER = 'x-nunchi-token';
 
 export function getAccessToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
+  return readString(TOKEN_KEY);
 }
 
 export function setAccessToken(token: string | null) {
-  try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
-    else localStorage.removeItem(TOKEN_KEY);
-  } catch {
-    // storage unavailable
-  }
+  writeString(TOKEN_KEY, token || null);
 }
 
 function authHeaders(): Record<string, string> {

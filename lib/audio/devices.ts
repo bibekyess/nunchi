@@ -1,22 +1,7 @@
+import { readString as read, writeString as write } from '@/lib/storage';
+
 const DEVICE_KEY = 'nunchi.inputDeviceId';
 const NOISE_KEY = 'nunchi.noiseSuppression';
-
-function read(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function write(key: string, value: string | null) {
-  try {
-    if (value === null) localStorage.removeItem(key);
-    else localStorage.setItem(key, value);
-  } catch {
-    // storage unavailable (private mode); the choice just isn't remembered
-  }
-}
 
 export const savedDeviceId = () => read(DEVICE_KEY) ?? undefined;
 export const saveDeviceId = (id: string | undefined) => write(DEVICE_KEY, id ?? null);
