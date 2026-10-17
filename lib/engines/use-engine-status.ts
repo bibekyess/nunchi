@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { EndpointSettings, EngineChoice } from '@/lib/settings/engines';
+import type { EndpointSettings, EngineChoice } from '@/lib/settings/engine-settings';
 import { buildEngines } from './registry';
 import { ENGINE_TASKS, type EngineStatus, type EngineTask } from './types';
 

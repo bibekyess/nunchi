@@ -3,7 +3,7 @@
 import { ENGINE_LABELS } from '@/lib/engines/registry';
 import { ENGINE_TASKS, type EngineStatus, type EngineTask } from '@/lib/engines/types';
 import { useEngineStatuses } from '@/lib/engines/use-engine-status';
-import { useEndpointSettings, useEngineChoice } from '@/lib/settings/engines';
+import { useEndpointSettings, useEngineChoice } from '@/lib/settings/use-engine-settings';
 import { describeStatus } from './EngineStatusBadge';
 import { Badge, cx, type Tone } from './ui';
 

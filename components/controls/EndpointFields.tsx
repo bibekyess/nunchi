@@ -3,7 +3,7 @@
 import { ChevronDown, LockKeyhole } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
 import type { EngineTask } from '@/lib/engines/types';
-import type { EndpointConfig } from '@/lib/settings/engines';
+import type { EndpointConfig, EndpointField, EndpointIssue } from '@/lib/settings/engine-settings';
 import { Chip, cx, Input, Switch } from '../ui';
 
 interface Preset {
@@ -48,14 +48,15 @@ function Field({
 }
 
 /**
- * The URL, model and credentials of one custom endpoint. `problem` is what still blocks it
- * (shown as an error once `showProblem` is set); `models` fills the model suggestions.
+ * The URL, model and credentials of one custom endpoint. `issues` is what still blocks it
+ * (shown as errors, with their fields marked, once `showProblem` is set); `models` fills the
+ * model suggestions.
  */
 export function EndpointFields({
   task,
   value,
   onChange,
-  problem,
+  issues,
   showProblem,
   models,
   children,
@@ -63,7 +64,7 @@ export function EndpointFields({
   task: EngineTask;
   value: EndpointConfig;
   onChange: (next: EndpointConfig) => void;
-  problem: string | null;
+  issues: EndpointIssue[];
   showProblem: boolean;
   models?: string[];
   /** Extra controls at the end (e.g. Test connection). */
@@ -72,9 +73,9 @@ export function EndpointFields({
   const id = useId();
   const kind = task === 'speech' ? 'speech' : 'chat';
   const set = (patch: Partial<EndpointConfig>) => onChange({ ...value, ...patch });
-  const invalid = showProblem && problem !== null;
-  const urlInvalid = invalid && /URL/.test(problem ?? '');
-  const modelInvalid = invalid && !urlInvalid;
+  const invalid = showProblem && issues.length > 0;
+  const marked = (field: EndpointField) =>
+    (showProblem && issues.some((i) => i.field === field)) || undefined;
 
   return (
     <div className="mt-3 animate-fade-in rounded-2xl bg-surface-2 p-4">
@@ -100,7 +101,7 @@ export function EndpointFields({
           spellCheck={false}
           placeholder={PRESETS[kind][0].baseUrl}
           value={value.baseUrl}
-          aria-invalid={urlInvalid || undefined}
+          aria-invalid={marked('baseUrl')}
           onChange={(e) => set({ baseUrl: e.target.value })}
         />
       </Field>
@@ -113,7 +114,7 @@ export function EndpointFields({
           placeholder={MODEL_PLACEHOLDER[kind]}
           list={models?.length ? `${id}-models` : undefined}
           value={value.model}
-          aria-invalid={modelInvalid || undefined}
+          aria-invalid={marked('model')}
           onChange={(e) => set({ model: e.target.value })}
         />
         {models?.length ? (
@@ -161,6 +162,7 @@ export function EndpointFields({
               spellCheck={false}
               placeholder="x-api-key"
               value={value.headerName}
+              aria-invalid={marked('headerName')}
               onChange={(e) => set({ headerName: e.target.value })}
             />
           </Field>
@@ -171,6 +173,7 @@ export function EndpointFields({
               autoComplete="off"
               spellCheck={false}
               value={value.headerValue}
+              aria-invalid={marked('headerValue')}
               onChange={(e) => set({ headerValue: e.target.value })}
             />
           </Field>
@@ -186,12 +189,13 @@ export function EndpointFields({
         )}
       </details>
 
-      {problem && (
+      {/* One thing to fix at a time; every field with an issue is marked above. */}
+      {issues.length > 0 && (
         <p
           className={cx('mt-3 text-sm', invalid ? 'text-danger-ink' : 'text-ink-muted')}
           role={invalid ? 'alert' : undefined}
         >
-          {problem}
+          {issues[0].message}
         </p>
       )}
       {children}

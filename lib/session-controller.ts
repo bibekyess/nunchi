@@ -10,7 +10,7 @@ import { SpeechRecorder } from './audio/vad';
 import { loadVadSettings, type VadSettings } from './audio/vad-settings';
 import { getEngines } from './engines/registry';
 import { PipelineQueue } from './pipeline/queue';
-import { getEngineChoice } from './settings/engines';
+import { getEngineChoice } from './settings/use-engine-settings';
 import { sessionStore } from './store/session-store';
 import { waitForOnline } from './util/online';
 import { ScreenWakeLock } from './wake-lock';

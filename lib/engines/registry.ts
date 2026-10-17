@@ -1,11 +1,10 @@
 import { EngineError } from '@/lib/errors';
 import {
   endpointFor,
-  getEndpointSettings,
-  getEngineChoice,
   type EndpointSettings,
   type EngineChoice,
-} from '@/lib/settings/engines';
+} from '@/lib/settings/engine-settings';
+import { getEndpointSettings, getEngineChoice } from '@/lib/settings/use-engine-settings';
 import { endpointSpeech, endpointSummary, endpointTranslate } from './endpoint';
 import { serverSpeech, serverSummary, serverTranslate } from './server';
 import {

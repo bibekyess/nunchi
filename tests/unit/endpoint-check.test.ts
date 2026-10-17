@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { checkEndpoint, CORS_HINT } from '@/lib/engines/endpoint-check';
-import { EMPTY_ENDPOINT } from '@/lib/settings/engines';
+import { EMPTY_ENDPOINT } from '@/lib/settings/engine-settings';
 
 const config = { ...EMPTY_ENDPOINT, baseUrl: 'http://localhost:11434/v1', model: 'qwen3:4b' };
 

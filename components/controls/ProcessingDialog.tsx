@@ -9,13 +9,14 @@ import { useEngineStatuses } from '@/lib/engines/use-engine-status';
 import {
   cleanBaseUrl,
   DEFAULT_ENGINE_CHOICE,
-  endpointProblem,
+  endpointIssues,
   sanitizeEndpoint,
-  useEngineSettings,
   type EndpointConfig,
+  type EndpointIssue,
   type EndpointSettings,
   type EngineSettings,
-} from '@/lib/settings/engines';
+} from '@/lib/settings/engine-settings';
+import { useEngineSettings } from '@/lib/settings/use-engine-settings';
 import { EngineStatusBadge } from '../EngineStatusBadge';
 import { Button, cx, Dialog, SegmentedControl, Switch, type SegmentOption } from '../ui';
 import { EndpointFields } from './EndpointFields';
@@ -50,18 +51,6 @@ function editedEndpoint(
   return task === 'summary' && endpoints.summary.sameAsTranslate ? 'translate' : task;
 }
 
-/** What still blocks a draft endpoint, or null. Mirrors what saving keeps (see sanitize). */
-export function draftProblem(config: EndpointConfig): string | null {
-  if (config.baseUrl.trim() && !cleanBaseUrl(config.baseUrl)) {
-    return 'Use a full URL starting with http:// or https://.';
-  }
-  return endpointProblem({
-    ...config,
-    baseUrl: cleanBaseUrl(config.baseUrl),
-    model: config.model.trim(),
-  });
-}
-
 function useDebounced<T>(value: T, ms: number): T {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -88,8 +77,9 @@ export function ProcessingDialog({ open, onClose }: { open: boolean; onClose: ()
 
   const { choice, endpoints } = draft;
 
-  const problemFor = (task: EngineTask) =>
-    choice[task] === 'endpoint' ? draftProblem(endpoints[editedEndpoint(endpoints, task)]) : null;
+  /** What blocks saving a task's custom endpoint (none unless the task uses one). */
+  const issuesFor = (task: EngineTask): EndpointIssue[] =>
+    choice[task] === 'endpoint' ? endpointIssues(endpoints[editedEndpoint(endpoints, task)]) : [];
 
   const options = (task: EngineTask): SegmentOption<EngineId>[] =>
     ENGINE_ORDER.map((id) => {
@@ -149,7 +139,7 @@ export function ProcessingDialog({ open, onClose }: { open: boolean; onClose: ()
   };
 
   const save = () => {
-    if (ENGINE_TASKS.some((task) => problemFor(task))) {
+    if (ENGINE_TASKS.some((task) => issuesFor(task).length > 0)) {
       setShowProblems(true);
       return;
     }
@@ -237,7 +227,7 @@ export function ProcessingDialog({ open, onClose }: { open: boolean; onClose: ()
                 task={task}
                 value={endpoints[key]}
                 onChange={(config) => setEndpoint(key, config)}
-                problem={problemFor(task)}
+                issues={issuesFor(task)}
                 showProblem={showProblems}
                 models={(() => {
                   const c = checks[key];
@@ -251,7 +241,7 @@ export function ProcessingDialog({ open, onClose }: { open: boolean; onClose: ()
                 />
               </EndpointFields>
             )}
-            {custom && sharing && showProblems && problemFor(task) && (
+            {custom && sharing && showProblems && issuesFor(task).length > 0 && (
               <p className="mt-2 text-sm text-danger-ink" role="alert">
                 Set up the translation endpoint above.
               </p>

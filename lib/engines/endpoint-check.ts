@@ -2,7 +2,7 @@
 // a missing model apart, in words someone setting up a local server can act on.
 import { hostOf } from '@/lib/core/openai-compatible';
 import { EngineError } from '@/lib/errors';
-import type { EndpointConfig } from '@/lib/settings/engines';
+import type { EndpointConfig } from '@/lib/settings/engine-settings';
 import { endpointClient, isLoopback } from './endpoint';
 
 export type EndpointCheck =

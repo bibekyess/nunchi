@@ -10,7 +10,7 @@ import { startSummary, summaryLines } from '@/lib/core/summarize';
 import { transcribeWithFallback } from '@/lib/core/transcribe';
 import { runTranslation } from '@/lib/core/translate';
 import { EngineError } from '@/lib/errors';
-import { endpointProblem, type EndpointConfig } from '@/lib/settings/engines';
+import { endpointProblem, type EndpointConfig } from '@/lib/settings/engine-settings';
 import type {
   EngineStatus,
   EngineTask,

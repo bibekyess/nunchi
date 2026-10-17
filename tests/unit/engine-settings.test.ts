@@ -10,8 +10,8 @@ import {
   sanitizeEndpoint,
   sanitizeEngineChoice,
   sanitizeEngineSettings,
-  useEngineSettings,
-} from '@/lib/settings/engines';
+} from '@/lib/settings/engine-settings';
+import { useEngineSettings } from '@/lib/settings/use-engine-settings';
 
 function memoryStorage() {
   const data = new Map<string, string>();
@@ -140,5 +140,17 @@ describe('endpoint settings', () => {
     expect(endpointProblem(DEFAULT_ENDPOINTS.speech)).toBe('Enter the server URL.');
     expect(endpointProblem({ ...ollama, model: '' })).toBe('Enter a model.');
     expect(endpointProblem(ollama)).toBeNull();
+  });
+
+  // Review finding I: a custom header that saving would drop must block saving instead.
+  it('flags a custom header that would be dropped, instead of dropping it silently', () => {
+    expect(endpointProblem({ ...ollama, headerName: 'x api key', headerValue: 'v' })).toMatch(
+      /header name/,
+    );
+    expect(endpointProblem({ ...ollama, headerName: 'x-api-key', headerValue: '' })).toMatch(
+      /header value/,
+    );
+    expect(endpointProblem({ ...ollama, headerName: '', headerValue: 'v' })).toMatch(/header name/);
+    expect(endpointProblem({ ...ollama, headerName: 'x-api-key', headerValue: 'v' })).toBeNull();
   });
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { serverSpeech, serverSummary, serverTranslate } from '@/lib/engines/server';
 import { BUILT_ENGINES, buildEngines, needsNetwork } from '@/lib/engines/registry';
 import { EngineError } from '@/lib/errors';
-import { DEFAULT_ENDPOINTS, DEFAULT_ENGINE_CHOICE } from '@/lib/settings/engines';
+import { DEFAULT_ENDPOINTS, DEFAULT_ENGINE_CHOICE } from '@/lib/settings/engine-settings';
 
 describe('engine registry', () => {
   it('uses the server engines by default', () => {

@@ -10,7 +10,7 @@ import {
 } from '@/lib/engines/endpoint';
 import type { TranslateRequest } from '@/lib/engines/types';
 import { EngineError } from '@/lib/errors';
-import { EMPTY_ENDPOINT } from '@/lib/settings/engines';
+import { EMPTY_ENDPOINT } from '@/lib/settings/engine-settings';
 import { chatJson, chatStream } from '../integration/helpers';
 
 afterEach(() => vi.unstubAllGlobals());
