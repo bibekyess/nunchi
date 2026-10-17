@@ -1,7 +1,8 @@
 'use client';
 
-import { Laptop, Link, Server } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { CircleAlert, CircleCheck, Laptop, Link, Loader2, Server } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { checkEndpoint, type EndpointCheck } from '@/lib/engines/endpoint-check';
 import { BUILT_ENGINES, ENGINE_LABELS } from '@/lib/engines/registry';
 import { ENGINE_TASKS, type EngineId, type EngineTask } from '@/lib/engines/types';
 import { useEngineStatuses } from '@/lib/engines/use-engine-status';
@@ -9,13 +10,14 @@ import {
   cleanBaseUrl,
   DEFAULT_ENGINE_CHOICE,
   endpointProblem,
+  sanitizeEndpoint,
   useEngineSettings,
   type EndpointConfig,
   type EndpointSettings,
   type EngineSettings,
 } from '@/lib/settings/engines';
 import { EngineStatusBadge } from '../EngineStatusBadge';
-import { Button, Dialog, SegmentedControl, Switch, type SegmentOption } from '../ui';
+import { Button, cx, Dialog, SegmentedControl, Switch, type SegmentOption } from '../ui';
 import { EndpointFields } from './EndpointFields';
 
 // Icons drop out on the narrowest phones so the three labels still fit on one row.
@@ -102,11 +104,49 @@ export function ProcessingDialog({ open, onClose }: { open: boolean; onClose: ()
       };
     });
 
-  const setEndpoint = (key: keyof EndpointSettings, config: EndpointConfig) =>
+  const [checks, setChecks] = useState<
+    Partial<Record<keyof EndpointSettings, EndpointCheck | 'pending'>>
+  >({});
+  const checkAbort = useRef<Partial<Record<keyof EndpointSettings, AbortController>>>({});
+  useEffect(() => {
+    const running = checkAbort.current;
+    return () => Object.values(running).forEach((a) => a?.abort());
+  }, []);
+
+  const setEndpoint = (key: keyof EndpointSettings, config: EndpointConfig) => {
     setDraft((d) => ({
       ...d,
       endpoints: { ...d.endpoints, [key]: { ...d.endpoints[key], ...config } },
     }));
+    // A result no longer describes what's in the form; keep the model list for suggestions.
+    setChecks((c) => {
+      const prev = c[key];
+      if (!prev || prev === 'pending') return c;
+      return { ...c, [key]: { ok: false, message: '', models: prev.models } };
+    });
+  };
+
+  const test = async (key: keyof EndpointSettings) => {
+    checkAbort.current[key]?.abort();
+    const abort = new AbortController();
+    checkAbort.current[key] = abort;
+    setChecks((c) => ({ ...c, [key]: 'pending' }));
+    try {
+      const result = await checkEndpoint(
+        sanitizeEndpoint(endpoints[key]),
+        key === 'speech' ? 'speech' : 'chat',
+        { pageProtocol: location.protocol, signal: abort.signal },
+      );
+      if (!abort.signal.aborted) setChecks((c) => ({ ...c, [key]: result }));
+    } catch {
+      if (!abort.signal.aborted) {
+        setChecks((c) => ({
+          ...c,
+          [key]: { ok: false, message: 'The test failed unexpectedly.' },
+        }));
+      }
+    }
+  };
 
   const save = () => {
     if (ENGINE_TASKS.some((task) => problemFor(task))) {
@@ -199,7 +239,17 @@ export function ProcessingDialog({ open, onClose }: { open: boolean; onClose: ()
                 onChange={(config) => setEndpoint(key, config)}
                 problem={problemFor(task)}
                 showProblem={showProblems}
-              />
+                models={(() => {
+                  const c = checks[key];
+                  return c && c !== 'pending' ? c.models : undefined;
+                })()}
+              >
+                <TestConnection
+                  check={checks[key]}
+                  disabled={!cleanBaseUrl(endpoints[key].baseUrl)}
+                  onTest={() => void test(key)}
+                />
+              </EndpointFields>
             )}
             {custom && sharing && showProblems && problemFor(task) && (
               <p className="mt-2 text-sm text-danger-ink" role="alert">
@@ -215,5 +265,48 @@ export function ProcessingDialog({ open, onClose }: { open: boolean; onClose: ()
         from this browser. On-device models are coming soon.
       </p>
     </Dialog>
+  );
+}
+
+/** The Test connection button and its result. */
+function TestConnection({
+  check,
+  disabled,
+  onTest,
+}: {
+  check: EndpointCheck | 'pending' | undefined;
+  disabled: boolean;
+  onTest: () => void;
+}) {
+  const pending = check === 'pending';
+  const result = check && check !== 'pending' && check.message ? check : null;
+  return (
+    <div className="mt-3.5">
+      <Button size="sm" onClick={onTest} disabled={disabled || pending}>
+        {pending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+        {pending ? 'Testing…' : 'Test connection'}
+      </Button>
+      <div role="status" aria-live="polite">
+        {result && (
+          <div
+            className={cx(
+              'mt-3 flex animate-fade-in items-start gap-2 rounded-xl px-3 py-2.5 text-sm',
+              result.ok ? 'bg-ok-soft text-ok-ink' : 'bg-danger-soft text-danger-ink',
+            )}
+          >
+            {result.ok ? (
+              <CircleCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            ) : (
+              <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            )}
+            <div className="min-w-0 break-words">
+              <p>{result.message}</p>
+              {result.ok && result.warning && <p className="mt-1 opacity-80">{result.warning}</p>}
+              {!result.ok && result.hint && <p className="mt-1 opacity-80">{result.hint}</p>}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
