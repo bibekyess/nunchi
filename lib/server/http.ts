@@ -83,14 +83,54 @@ export function toUpstreamError(
   return new UpstreamError(service, 'upstream_error', status, detail);
 }
 
-/** Parses and validates a JSON body; on failure returns the 400 response to send. */
+/**
+ * Reads a request body of at most `maxBytes`, or returns null when it is larger: refused from
+ * its Content-Length before reading anything, or as soon as a streamed body passes the limit.
+ * Keeps one oversized request from filling the server's memory.
+ */
+export async function readBodyLimited(
+  request: Request,
+  maxBytes: number,
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  const declared = Number(request.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) return null;
+  if (!request.body) return new Uint8Array(0);
+  const reader = request.body.getReader();
+  const parts: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    parts.push(value);
+  }
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const part of parts) {
+    body.set(part, offset);
+    offset += part.byteLength;
+  }
+  return body;
+}
+
+/**
+ * Parses and validates a JSON body of at most `maxBytes`; on failure returns the response to
+ * send (413 when too large, 400 otherwise).
+ */
 export async function parseJsonBody<S extends z.ZodType>(
   request: Request,
   schema: S,
+  maxBytes: number,
 ): Promise<{ data: z.output<S>; error?: undefined } | { data?: undefined; error: Response }> {
+  const body = await readBodyLimited(request, maxBytes);
+  if (!body) return { error: jsonError('payload_too_large', 'The request is too large.') };
   let raw: unknown;
   try {
-    raw = await request.json();
+    raw = JSON.parse(new TextDecoder().decode(body));
   } catch {
     return { error: jsonError('bad_request', 'Expected a JSON body.') };
   }

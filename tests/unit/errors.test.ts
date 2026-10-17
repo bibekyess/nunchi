@@ -27,7 +27,7 @@ describe('ApiError', () => {
     [401, 'auth', false],
     [400, 'bad_request', false],
     [408, 'timeout', true],
-    [429, 'bad_request', true],
+    [429, 'upstream', true], // rate limited: the server is busy, not the request wrong
     [502, 'upstream', true],
     [504, 'timeout', true],
   ] as const)('status %i is %s, retryable %s', (status, kind, retryable) => {

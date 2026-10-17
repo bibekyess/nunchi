@@ -14,6 +14,12 @@ export const SUMMARY_TOKENS = 1500;
 export const PART_TOKENS = 800;
 /** Summaries are long generations; the default model timeout is meant for translations. */
 export const SUMMARY_TIMEOUT_MS = 180_000;
+/**
+ * Most transcript text (originals plus translations) the server summarizes in one request.
+ * A two-hour meeting is about 1,500 lines and 180,000 characters; this allows about three
+ * hours of dense talk, i.e. at most ~13 parts, instead of hundreds of LLM calls.
+ */
+export const SUMMARY_MAX_CHARS = 300_000;
 const PART_CONCURRENCY = 2;
 
 /** Formatted transcript lines in speech order, blank ones dropped. */

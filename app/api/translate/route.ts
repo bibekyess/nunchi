@@ -20,6 +20,12 @@ import { logTiming, ms, startTimer } from '@/lib/server/timing';
 
 export const maxDuration = 60;
 
+/**
+ * Well above the largest valid body (a 2,000-character line, 5 context lines of up to 6,000
+ * characters and a 200-term glossary), even as escaped UTF-8.
+ */
+const MAX_BODY_BYTES = 1024 * 1024;
+
 const bodySchema = z.object({
   text: z.string().trim().min(1).max(2000),
   sourceLang: langSchema,
@@ -38,7 +44,7 @@ export async function POST(request: Request) {
     if (denied) return denied;
     if (!isConfigured('llm')) return notConfigured('llm');
 
-    const { data: input, error } = await parseJsonBody(request, bodySchema);
+    const { data: input, error } = await parseJsonBody(request, bodySchema, MAX_BODY_BYTES);
     if (error) return error;
     const dir = `${input.sourceLang}->${input.targetLang}`;
 

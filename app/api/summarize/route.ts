@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   startSummary,
+  SUMMARY_MAX_CHARS,
   SUMMARY_TIMEOUT_MS,
   summaryLines,
   type SummaryRun,
@@ -20,6 +21,9 @@ import { serverChat } from '@/lib/server/llm';
 import { logTiming, ms, startTimer } from '@/lib/server/timing';
 
 export const maxDuration = 300;
+
+/** Room for `SUMMARY_MAX_CHARS` of Korean (3 bytes a character) plus JSON and the glossary. */
+const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
 const bodySchema = z.object({
   utterances: z
@@ -44,10 +48,20 @@ export async function POST(request: Request) {
     if (denied) return denied;
     if (!isConfigured('llm')) return notConfigured('llm');
 
-    const { data, error } = await parseJsonBody(request, bodySchema);
+    const { data, error } = await parseJsonBody(request, bodySchema, MAX_BODY_BYTES);
     if (error) return error;
 
     const { utterances, ...input } = data;
+    const chars = utterances.reduce(
+      (n, u) => n + u.sourceText.length + (u.translation?.length ?? 0),
+      0,
+    );
+    if (chars > SUMMARY_MAX_CHARS) {
+      return jsonError(
+        'payload_too_large',
+        `The transcript is too long to summarize (over ${SUMMARY_MAX_CHARS.toLocaleString('en')} characters).`,
+      );
+    }
     const lines = summaryLines(utterances);
     if (lines.length === 0) return jsonError('bad_request', 'The transcript is empty.');
 

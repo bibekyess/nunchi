@@ -35,7 +35,8 @@ function kindOf(status: number, code: string): EngineErrorKind {
   if (status === 0) return 'network';
   if (status === 401) return 'auth';
   if (status === 408 || status === 504) return 'timeout';
-  if (status >= 500) return 'upstream';
+  // Rate limited: the server is busy, not the request wrong (as in the endpoint client).
+  if (status === 429 || status >= 500) return 'upstream';
   return 'bad_request';
 }
 

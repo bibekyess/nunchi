@@ -4,13 +4,15 @@ import { transcribeWithFallback } from '@/lib/core/transcribe';
 import { langOrAutoSchema } from '@/lib/schemas';
 import { checkAccess } from '@/lib/server/auth';
 import { isConfigured } from '@/lib/server/env';
-import { errorResponse, jsonError, notConfigured } from '@/lib/server/http';
+import { errorResponse, jsonError, notConfigured, readBodyLimited } from '@/lib/server/http';
 import { serverSpeech } from '@/lib/server/speaches';
 import { logTiming, ms, startTimer } from '@/lib/server/timing';
 
 export const maxDuration = 60;
 
 const MAX_AUDIO_BYTES = 2 * 1024 * 1024; // ~65 s of 16 kHz 16-bit mono; clips are capped at 30 s
+/** The clip plus the form's other fields and boundaries. */
+const MAX_BODY_BYTES = MAX_AUDIO_BYTES + 64 * 1024;
 
 const fieldsSchema = z.object({
   language: langOrAutoSchema.default('auto'),
@@ -25,9 +27,12 @@ export async function POST(request: Request) {
     if (denied) return denied;
     if (!isConfigured('speaches')) return notConfigured('speaches');
 
+    const body = await readBodyLimited(request, MAX_BODY_BYTES);
+    if (!body) return jsonError('payload_too_large', 'Audio clip is larger than 2 MB.');
     let form: FormData;
     try {
-      form = await request.formData();
+      const contentType = request.headers.get('content-type') ?? '';
+      form = await new Response(body, { headers: { 'Content-Type': contentType } }).formData();
     } catch {
       return jsonError('bad_request', 'Expected multipart/form-data.');
     }
