@@ -2,6 +2,36 @@
 
 Changes to, or details not covered by, the implementation plan. Newest first.
 
+## 2026-10-17 — Engines Phase 0
+
+Cleanup before switchable engines (see `docs/ENGINES-PLAN.md`). No behavior change: API
+shapes, prompts, temperatures, timeouts, retries, log lines and storage keys are the same, and
+`pnpm smoke` plus extra route probes against `pnpm mock` matched the output from before.
+
+- **`lib/core/` holds the pipeline logic** that used to live in the route handlers:
+  `translate.ts` (prompt, `<think>` removal, one non-streamed retry on empty output),
+  `summarize.ts` (line formatting, parts two at a time, streamed merge) and `transcribe.ts`
+  (one Korean retry when auto-detect lands outside the supported set). It depends only on
+  `ChatModel` and `SpeechModel` from `lib/core/models.ts` and uses no Node- or DOM-only APIs,
+  so the browser can run it later with endpoint or on-device models.
+- **Server models:** `serverChat` (`lib/server/llm.ts`, OpenAI SDK, vLLM no-thinking flag) and
+  `serverSpeech` (`lib/server/speaches.ts`). A `start*` function opens the upstream stream
+  before the route answers, so connection errors still become JSON errors; timing stays in
+  the routes (`onPartsDone` reports summary parts).
+- **Routes are thin:** access check, `parseJsonBody`, core call, `streamText` (one place for
+  the plain-text stream, timing line and mid-stream errors). Request schemas shared in
+  `lib/schemas.ts`.
+- **Errors:** `EngineError { kind, retryable }` in `lib/errors.ts`; `ApiError` extends it with
+  the same retry rule (network, 408, 429, 5xx). The queue and summary check the kind, not the
+  HTTP client. The access-token header name lives there too, shared by client and server.
+- **The queue hands raw samples to `transcribe`.** WAV encoding moved into the server adapter in
+  `session-controller.ts`; on-device engines will take the `Float32Array` as is.
+- **Smaller pieces:** one glossary formatter (`lib/prompts/glossary.ts`), one `Semaphore` /
+  `mapLimit` (`lib/util/concurrency.ts`), guarded localStorage helpers (`lib/storage.ts`;
+  zustand `persist` and the inline theme script keep their own), summary generation in a
+  `useSummary` hook (`lib/use-summary.ts`), and `components/ui.tsx` split into
+  `components/ui/` with an `index.ts`, so `../ui` imports are unchanged.
+
 ## 2026-10-13 — Phase 3
 
 - **Scope cut to what helps follow a meeting:** on-device sessions, the recent list and the
