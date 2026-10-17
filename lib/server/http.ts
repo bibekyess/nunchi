@@ -1,5 +1,7 @@
 import 'server-only';
 import type { z } from 'zod';
+import { EndpointError } from '@/lib/core/openai-compatible';
+import { EngineError } from '@/lib/errors';
 import type { ApiErrorBody } from '@/lib/types';
 import type { Service } from './env';
 import { logTiming, ms, type Field } from './timing';
@@ -62,10 +64,8 @@ export class UpstreamError extends Error {
 }
 
 export function isTimeoutError(err: unknown): boolean {
-  return (
-    err instanceof Error &&
-    (err.name === 'TimeoutError' || err.name === 'APIConnectionTimeoutError')
-  );
+  if (err instanceof EngineError) return err.kind === 'timeout';
+  return err instanceof Error && err.name === 'TimeoutError';
 }
 
 /** Wraps anything an upstream call threw as an `UpstreamError`, keeping the detail for logs. */
@@ -76,7 +76,10 @@ export function toUpstreamError(
   if (err instanceof UpstreamError) return err;
   if (isTimeoutError(err)) return new UpstreamError(service, 'upstream_timeout', undefined);
   const status = (err as { status?: number })?.status;
-  return new UpstreamError(service, 'upstream_error', status, String(err));
+  // An endpoint error keeps the server's response body apart from its user-facing message.
+  const detail =
+    err instanceof EndpointError && err.detail ? `${err.message} ${err.detail}` : String(err);
+  return new UpstreamError(service, 'upstream_error', status, detail);
 }
 
 /** Parses and validates a JSON body; on failure returns the 400 response to send. */

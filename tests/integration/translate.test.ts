@@ -114,6 +114,27 @@ describe('POST /api/translate', () => {
     spy.mockRestore();
   });
 
+  it('calls the LLM once on a 5xx (the browser queue owns retries) and logs the body only', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let calls = 0;
+    let auth: string | null = null;
+    server.use(
+      http.post(`${LLM}/chat/completions`, ({ request }) => {
+        calls++;
+        auth = request.headers.get('authorization');
+        return HttpResponse.json({ error: { message: 'gpu oom' } }, { status: 503 });
+      }),
+    );
+    const res = await POST(request(body));
+    expect(res.status).toBe(502);
+    expect(await res.text()).not.toContain('gpu oom');
+    expect(calls).toBe(1);
+    // LLM_API_KEY is empty in the test env: the "none" placeholder is still sent.
+    expect(auth).toBe('Bearer none');
+    expect(spy.mock.calls.flat().join(' ')).toContain('gpu oom');
+    spy.mockRestore();
+  });
+
   it('validates the body', async () => {
     expect((await POST(request({ ...body, text: '   ' }))).status).toBe(400);
     expect((await POST(request({ ...body, targetLang: 'ja' }))).status).toBe(400);

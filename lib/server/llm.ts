@@ -1,83 +1,51 @@
 import 'server-only';
-import OpenAI from 'openai';
-import type { ChatMessage, ChatModel, ChatOptions } from '@/lib/core/models';
+import type { ChatModel } from '@/lib/core/models';
+import {
+  createOpenAICompatible,
+  VLLM_NO_THINKING,
+  type OpenAICompatibleClient,
+} from '@/lib/core/openai-compatible';
 import { getEnv, isConfigured } from './env';
 import { NotConfiguredError } from './http';
 
-let client: OpenAI | undefined;
+/** Default time allowed until a response starts; summaries ask for longer per call. */
+const LLM_TIMEOUT_MS = 60_000;
 
-/** OpenAI-compatible client for the self-hosted vLLM Qwen server. */
-export function getLlm(): OpenAI {
+let client: OpenAICompatibleClient | undefined;
+
+/**
+ * Client for the self-hosted vLLM Qwen server. It never retries on its own (translations are
+ * latency-sensitive; the browser's job queue owns retries). Qwen3 chat templates think by
+ * default, so every request turns that off to save latency and tokens.
+ */
+function getLlm(): OpenAICompatibleClient {
   if (client) return client;
   const env = getEnv();
   if (!isConfigured('llm', env)) throw new NotConfiguredError('llm');
-  client = new OpenAI({
-    baseURL: env.LLM_BASE_URL,
+  client = createOpenAICompatible({
+    baseUrl: env.LLM_BASE_URL!,
+    model: env.LLM_MODEL!,
+    // Sent even when it is the "none" placeholder, as the OpenAI SDK did before.
     apiKey: env.LLM_API_KEY,
-    defaultHeaders:
+    headers:
       env.LLM_HEADER_NAME && env.LLM_HEADER_VALUE
         ? { [env.LLM_HEADER_NAME]: env.LLM_HEADER_VALUE }
         : undefined,
-    timeout: 60_000,
-    // Translations are latency-sensitive; the client queue owns retries.
-    maxRetries: 0,
+    extraBody: VLLM_NO_THINKING,
+    timeoutMs: LLM_TIMEOUT_MS,
   });
   return client;
 }
 
-/**
- * vLLM-specific request fields. Qwen3 chat templates think by default; turning it off
- * saves latency and tokens. The SDK forwards unknown body fields as-is.
- */
-export const VLLM_NO_THINKING = {
-  chat_template_kwargs: { enable_thinking: false },
-} as Record<string, unknown>;
-
-function requestFields(messages: ChatMessage[], opts: ChatOptions) {
-  return {
-    model: getEnv().LLM_MODEL!, // set whenever getLlm() succeeded
-    messages,
-    temperature: opts.temperature,
-    max_tokens: opts.maxTokens,
-    ...VLLM_NO_THINKING,
-  };
-}
-
-function requestOptions(opts: ChatOptions) {
-  return {
-    signal: opts.signal,
-    // Only override the client's default when asked to.
-    ...(opts.timeoutMs !== undefined ? { timeout: opts.timeoutMs } : {}),
-  };
-}
-
 /** The vLLM Qwen server as a `ChatModel`, with reasoning turned off. */
 export const serverChat: ChatModel = {
-  async stream(messages, opts) {
-    const upstream = await getLlm().chat.completions.create(
-      { ...requestFields(messages, opts), stream: true },
-      requestOptions(opts),
-    );
-    return {
-      async *[Symbol.asyncIterator]() {
-        for await (const chunk of upstream) yield chunk.choices[0]?.delta?.content ?? '';
-      },
-      abort: () => upstream.controller.abort(),
-    };
-  },
-
-  async complete(messages, opts) {
-    const res = await getLlm().chat.completions.create(
-      requestFields(messages, opts),
-      requestOptions(opts),
-    );
-    return res.choices[0]?.message?.content ?? '';
-  },
+  stream: (messages, opts) => getLlm().chat.stream(messages, opts),
+  complete: (messages, opts) => getLlm().chat.complete(messages, opts),
 };
 
 export async function pingLlm(timeoutMs = 5_000): Promise<boolean> {
   try {
-    await getLlm().models.list({ timeout: timeoutMs, maxRetries: 0 });
+    await getLlm().listModels({ timeoutMs });
     return true;
   } catch {
     return false;
