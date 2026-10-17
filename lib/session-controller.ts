@@ -10,6 +10,7 @@ import { SpeechRecorder } from './audio/vad';
 import { loadVadSettings, type VadSettings } from './audio/vad-settings';
 import { getEngines } from './engines/registry';
 import { PipelineQueue } from './pipeline/queue';
+import { getEngineChoice } from './settings/engines';
 import { sessionStore } from './store/session-store';
 import { ScreenWakeLock } from './wake-lock';
 
@@ -74,6 +75,7 @@ export class SessionController {
       this.lastFrameAt = performance.now();
       await this.wakeLock.acquire();
       this.store.setSharingStopped(false);
+      this.store.setSessionEngines(getEngineChoice());
       this.store.setRecorder('listening');
     } catch (err) {
       this.recorder = null;
@@ -109,6 +111,7 @@ export class SessionController {
     await this.recorder.start();
     this.lastFrameAt = performance.now();
     await this.wakeLock.acquire();
+    this.store.setSessionEngines(getEngineChoice());
     this.store.setRecorder('listening');
   }
 

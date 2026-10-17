@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import { useSyncExternalStore } from 'react';
 import { create } from 'zustand';
-import { ENGINE_IDS, ENGINE_TASKS, type EngineId, type EngineTask } from '@/lib/engines/types';
+import { ENGINE_IDS, ENGINE_TASKS, type EngineChoice } from '@/lib/engines/types';
 import { readJson, writeJson } from '@/lib/storage';
 
-/** Which engine does each task. Per device, like the display preferences. */
-export type EngineChoice = Record<EngineTask, EngineId>;
+// Per device, like the display preferences.
+export type { EngineChoice };
 
 export const ENGINE_SETTINGS_KEY = 'nunchi.engines';
 

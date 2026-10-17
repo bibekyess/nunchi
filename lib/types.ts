@@ -1,3 +1,4 @@
+import type { EngineChoice } from './engines/types';
 import type { Lang } from './languages';
 
 export type { Lang };
@@ -41,6 +42,8 @@ export interface Session {
   meetingContext?: string;
   summary?: string; // markdown
   summaryLang?: Lang; // language the summary is written in
+  /** Engines in use when listening last started (absent on sessions from before engines). */
+  engines?: EngineChoice;
 }
 
 export interface GlossaryEntry {

@@ -10,6 +10,9 @@ export type EngineId = (typeof ENGINE_IDS)[number];
 export const ENGINE_TASKS = ['speech', 'translate', 'summary'] as const;
 export type EngineTask = (typeof ENGINE_TASKS)[number];
 
+/** Which engine does each task. */
+export type EngineChoice = Record<EngineTask, EngineId>;
+
 /** Whether an engine can take work right now. */
 export type EngineStatus =
   | { state: 'ready' }

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { MODE_PRESETS } from '@/lib/pipeline/direction';
 import { readJson, writeJson } from '@/lib/storage';
+import { ENGINE_TASKS, type EngineChoice } from '@/lib/engines/types';
 import type { GlossaryEntry, Lang, Session, TranslationMode, Utterance } from '@/lib/types';
 
 export type RecorderState = 'idle' | 'starting' | 'listening' | 'paused' | 'error';
@@ -32,6 +33,7 @@ export interface SessionState {
   setMode: (mode: TranslationMode) => void;
   setGlossary: (glossary: GlossaryEntry[], meetingContext?: string) => void;
   setSummary: (summary: string | undefined, summaryLang?: Lang) => void;
+  setSessionEngines: (engines: EngineChoice) => void;
 
   // Utterances. Every change goes through these two, so it can later be persisted (Phase 3)
   // and relayed to share viewers (Phase 5).
@@ -149,6 +151,15 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
           }
         : {},
     ),
+
+  setSessionEngines: (engines) =>
+    set((s) => {
+      if (!s.session) return {};
+      const current = s.session.engines;
+      // Unchanged: keep the session object, so nothing is saved again.
+      if (current && ENGINE_TASKS.every((t) => current[t] === engines[t])) return {};
+      return { session: { ...s.session, engines: { ...engines } } };
+    }),
 
   addUtterance: (u) =>
     set((s) => {
