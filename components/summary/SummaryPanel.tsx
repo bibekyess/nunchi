@@ -9,78 +9,23 @@ import {
   Sparkles,
   TriangleAlert,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { summarizeStream } from '@/lib/api-client';
-import { EngineError } from '@/lib/errors';
 import { isLang, LANG_CODES, SUPPORTED_LANGS, type Lang } from '@/lib/languages';
-import { sessionStore, useSessionStore } from '@/lib/store/session-store';
+import { useSessionStore } from '@/lib/store/session-store';
+import { useSummary } from '@/lib/use-summary';
 import { LangFlag } from '../LangFlag';
 import { Button, Card, cx, SELECT_PILL } from '../ui';
-
-/** Translated lines in speech order, as the summary route expects them. */
-function transcriptLines() {
-  const { ids, byId } = sessionStore.getState();
-  return ids
-    .map((id) => byId[id])
-    .filter((u) => u.status === 'done' && u.sourceText)
-    .map((u) => ({ seq: u.seq, sourceText: u.sourceText!, translation: u.translation }));
-}
-
-type Phase = 'idle' | 'working' | 'error';
 
 export function SummaryPanel() {
   const summary = useSessionStore((s) => s.session?.summary);
   const savedLang = useSessionStore((s) => s.session?.summaryLang ?? s.session?.mode.target);
   const hasLines = useSessionStore((s) => s.ids.some((id) => s.byId[id].status === 'done'));
-  const setSummary = useSessionStore((s) => s.setSummary);
+  const { phase, streamed, error, generate } = useSummary();
 
   const [lang, setLang] = useState<Lang>(savedLang ?? 'en');
-  const [phase, setPhase] = useState<Phase>('idle');
-  const [streamed, setStreamed] = useState('');
-  const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
-  const abort = useRef<AbortController | null>(null);
-
-  useEffect(() => () => abort.current?.abort(), []);
-
-  const generate = async () => {
-    abort.current?.abort();
-    const controller = new AbortController();
-    abort.current = controller;
-    const session = sessionStore.getState().session;
-    if (!session) return;
-    setPhase('working');
-    setStreamed('');
-    setError('');
-    try {
-      let text = '';
-      text = await summarizeStream(
-        {
-          utterances: transcriptLines(),
-          glossary: session.glossary,
-          meetingContext: session.meetingContext,
-          outputLang: lang,
-        },
-        (delta) => {
-          text += delta;
-          setStreamed(text);
-        },
-        controller.signal,
-      );
-      if (!text.trim()) throw new EngineError('upstream', 'The summary came back empty.');
-      setSummary(text.trim(), lang);
-      setPhase('idle');
-    } catch (err) {
-      if ((err as Error)?.name === 'AbortError') return;
-      if (err instanceof EngineError && err.kind === 'auth') {
-        sessionStore.getState().setNeedsAccessToken(true);
-      }
-      setError(err instanceof EngineError ? err.message : 'Could not summarize.');
-      setPhase('error');
-    }
-  };
 
   const copy = async () => {
     if (!summary) return;
@@ -101,7 +46,11 @@ export function SummaryPanel() {
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-[calc(var(--top-inset)+1rem)] pb-[calc(var(--bottom-inset)+1rem)] scroll-pt-[var(--top-inset)]">
       <div className="mx-auto flex max-w-3xl flex-col gap-3">
         <div className="flex items-center gap-2">
-          <Button variant="primary" onClick={generate} disabled={working || !hasLines}>
+          <Button
+            variant="primary"
+            onClick={() => void generate(lang)}
+            disabled={working || !hasLines}
+          >
             {working ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
             ) : summary ? (
