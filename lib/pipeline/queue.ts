@@ -2,6 +2,7 @@ import { ApiError, type TranslateRequest } from '@/lib/api-client';
 import type { Clip } from '@/lib/audio/vad';
 import type { SessionState } from '@/lib/store/session-store';
 import type { Lang, TranscriptionResult, TranslationContextItem, Utterance } from '@/lib/types';
+import { Semaphore } from '@/lib/util/concurrency';
 import { pickDirection } from './direction';
 import { hallucinationReason } from './hallucinations';
 import { buildWhisperPrompt } from './whisper-prompt';
@@ -27,23 +28,6 @@ export interface QueueDeps {
   sleep: (ms: number) => Promise<void>;
   /** Resolves once the browser is online (immediately if it already is). */
   waitForOnline: () => Promise<void>;
-}
-
-class Semaphore {
-  private waiting: (() => void)[] = [];
-  private active = 0;
-  constructor(private readonly size: number) {}
-
-  async run<T>(task: () => Promise<T>): Promise<T> {
-    if (this.active >= this.size) await new Promise<void>((r) => this.waiting.push(r));
-    this.active++;
-    try {
-      return await task();
-    } finally {
-      this.active--;
-      this.waiting.shift()?.();
-    }
-  }
 }
 
 const normalize = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();

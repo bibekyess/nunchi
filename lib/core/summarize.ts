@@ -7,6 +7,7 @@ import {
   type SummaryLine,
 } from '@/lib/prompts/summarize';
 import { ThinkStripper } from '@/lib/think-stripper';
+import { mapLimit } from '@/lib/util/concurrency';
 import type { ChatMessage, ChatModel, ChatStream } from './models';
 
 export const SUMMARY_TOKENS = 1500;
@@ -51,29 +52,6 @@ async function complete(chat: ChatModel, messages: ChatMessage[], signal?: Abort
   return stripAll(content);
 }
 
-/** Summarizes each part, a few at a time, keeping their order. */
-async function summarizeParts(
-  chat: ChatModel,
-  input: SummarizePromptInput,
-  chunks: string[][],
-  signal?: AbortSignal,
-): Promise<string[]> {
-  const out = new Array<string>(chunks.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < chunks.length) {
-      const i = next++;
-      out[i] = await complete(
-        chat,
-        buildSummarizeMessages(input, chunks[i], { index: i, total: chunks.length }),
-        signal,
-      );
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(PART_CONCURRENCY, chunks.length) }, worker));
-  return out;
-}
-
 /**
  * Opens a streamed summary of formatted `lines` (see `summaryLines`). A transcript longer than
  * one chunk is summarized in parts first (not streamed), then the merge is streamed. Resolves
@@ -91,7 +69,14 @@ export async function startSummary(
     messages = buildSummarizeMessages(input, chunks[0]);
   } else {
     const t0 = performance.now();
-    const partSummaries = await summarizeParts(chat, input, chunks, signal);
+    // A few parts at a time, keeping their order.
+    const partSummaries = await mapLimit(chunks, PART_CONCURRENCY, (chunk, i) =>
+      complete(
+        chat,
+        buildSummarizeMessages(input, chunk, { index: i, total: chunks.length }),
+        signal,
+      ),
+    );
     onPartsDone?.(chunks.length, Math.round(performance.now() - t0));
     messages = buildMergeMessages(input, partSummaries);
   }
