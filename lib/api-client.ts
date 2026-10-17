@@ -1,12 +1,7 @@
 import { ACCESS_TOKEN_HEADER, EngineError, type EngineErrorKind } from './errors';
 import { readString, writeString } from './storage';
-import type {
-  ApiErrorBody,
-  GlossaryEntry,
-  Lang,
-  TranscriptionResult,
-  TranslationContextItem,
-} from './types';
+import type { SummarizeRequest, TranslateRequest } from './engines/types';
+import type { ApiErrorBody, Lang, TranscriptionResult } from './types';
 
 const TOKEN_KEY = 'nunchi.accessToken';
 
@@ -81,16 +76,7 @@ export async function transcribeClip(
   return (await res.json()) as TranscriptionResult;
 }
 
-export interface TranslateRequest {
-  text: string;
-  sourceLang: Lang;
-  targetLang: Lang;
-  context: TranslationContextItem[];
-  glossary: GlossaryEntry[];
-  meetingContext?: string;
-  /** Second attempt: the server answers deterministically (temperature 0). */
-  retry?: boolean;
-}
+export type { TranslateRequest };
 
 /** Reads a plain-text streamed response, calling onDelta for each piece. Resolves with the full text. */
 async function readTextStream(
@@ -139,12 +125,7 @@ export async function translateStream(
   return readTextStream(res, onDelta, 'Translation');
 }
 
-export interface SummarizeRequest {
-  utterances: { seq: number; sourceText: string; translation?: string }[];
-  glossary: GlossaryEntry[];
-  meetingContext?: string;
-  outputLang: Lang;
-}
+export type { SummarizeRequest };
 
 /** Streams the markdown summary. Resolves with the full text. */
 export async function summarizeStream(
