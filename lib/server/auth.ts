@@ -1,9 +1,8 @@
 import 'server-only';
 import { timingSafeEqual } from 'node:crypto';
+import { ACCESS_TOKEN_HEADER } from '@/lib/errors';
 import { getEnv } from './env';
 import { jsonError } from './http';
-
-export const ACCESS_TOKEN_HEADER = 'x-nunchi-token';
 
 /** Returns a 401 response when APP_ACCESS_TOKEN is set and the request lacks it, else null. */
 export function checkAccess(request: Request): Response | null {

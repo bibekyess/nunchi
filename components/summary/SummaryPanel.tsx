@@ -12,7 +12,8 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ApiError, summarizeStream } from '@/lib/api-client';
+import { summarizeStream } from '@/lib/api-client';
+import { EngineError } from '@/lib/errors';
 import { isLang, LANG_CODES, SUPPORTED_LANGS, type Lang } from '@/lib/languages';
 import { sessionStore, useSessionStore } from '@/lib/store/session-store';
 import { LangFlag } from '../LangFlag';
@@ -68,15 +69,15 @@ export function SummaryPanel() {
         },
         controller.signal,
       );
-      if (!text.trim()) throw new ApiError(502, 'empty', 'The summary came back empty.');
+      if (!text.trim()) throw new EngineError('upstream', 'The summary came back empty.');
       setSummary(text.trim(), lang);
       setPhase('idle');
     } catch (err) {
       if ((err as Error)?.name === 'AbortError') return;
-      if (err instanceof ApiError && err.status === 401) {
+      if (err instanceof EngineError && err.kind === 'auth') {
         sessionStore.getState().setNeedsAccessToken(true);
       }
-      setError(err instanceof ApiError ? err.message : 'Could not summarize.');
+      setError(err instanceof EngineError ? err.message : 'Could not summarize.');
       setPhase('error');
     }
   };

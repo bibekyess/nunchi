@@ -1,3 +1,4 @@
+import { ACCESS_TOKEN_HEADER, EngineError, type EngineErrorKind } from './errors';
 import { readString, writeString } from './storage';
 import type {
   ApiErrorBody,
@@ -8,7 +9,6 @@ import type {
 } from './types';
 
 const TOKEN_KEY = 'nunchi.accessToken';
-export const ACCESS_TOKEN_HEADER = 'x-nunchi-token';
 
 export function getAccessToken(): string | null {
   return readString(TOKEN_KEY);
@@ -23,19 +23,28 @@ function authHeaders(): Record<string, string> {
   return token ? { [ACCESS_TOKEN_HEADER]: token } : {};
 }
 
-export class ApiError extends Error {
+function kindOf(status: number): EngineErrorKind {
+  if (status === 0) return 'network';
+  if (status === 401) return 'auth';
+  if (status === 408 || status === 504) return 'timeout';
+  if (status >= 500) return 'upstream';
+  return 'bad_request';
+}
+
+/** An error from one of the app's own /api/* routes. */
+export class ApiError extends EngineError {
   constructor(
     public readonly status: number, // 0 = network failure
     public readonly code: string,
     message: string,
   ) {
-    super(message);
+    // Network failures, timeouts and 5xx are worth retrying; 4xx are not.
+    super(
+      kindOf(status),
+      message,
+      status === 0 || status === 408 || status === 429 || status >= 500,
+    );
     this.name = 'ApiError';
-  }
-
-  /** Network failures, timeouts and 5xx are worth retrying; 4xx are not. */
-  get retryable() {
-    return this.status === 0 || this.status === 408 || this.status === 429 || this.status >= 500;
   }
 }
 

@@ -1,5 +1,6 @@
-import { ApiError, type TranslateRequest } from '@/lib/api-client';
+import type { TranslateRequest } from '@/lib/api-client';
 import type { Clip } from '@/lib/audio/vad';
+import { EngineError } from '@/lib/errors';
 import type { SessionState } from '@/lib/store/session-store';
 import type { Lang, TranscriptionResult, TranslationContextItem, Utterance } from '@/lib/types';
 import { Semaphore } from '@/lib/util/concurrency';
@@ -110,9 +111,9 @@ export class PipelineQueue {
 
   private fail(id: string, err: unknown) {
     if (this.signal.aborted || (err as Error)?.name === 'AbortError') return;
-    if (err instanceof ApiError && err.status === 401)
+    if (err instanceof EngineError && err.kind === 'auth')
       this.deps.getState().setNeedsAccessToken(true);
-    const message = err instanceof ApiError ? err.message : 'Something went wrong';
+    const message = err instanceof EngineError ? err.message : 'Something went wrong';
     this.patch(id, { status: 'error', error: message });
   }
 
@@ -123,7 +124,7 @@ export class PipelineQueue {
       try {
         return await attempt();
       } catch (err) {
-        const retryable = err instanceof ApiError && err.retryable;
+        const retryable = err instanceof EngineError && err.retryable;
         if (!retryable || i >= BACKOFF_MS.length || this.signal.aborted) throw err;
         await this.deps.sleep(BACKOFF_MS[i]);
       }
