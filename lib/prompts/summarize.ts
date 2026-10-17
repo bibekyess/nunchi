@@ -1,6 +1,6 @@
+import type { ChatMessage } from '@/lib/core/models';
 import { langName, type Lang } from '@/lib/languages';
 import type { GlossaryEntry } from '@/lib/types';
-import type { ChatMessage } from './translate';
 
 /** Transcripts longer than this are summarized in parts, then the parts are merged. */
 export const CHUNK_CHARS = 24_000;

@@ -1,14 +1,14 @@
 import { z } from 'zod';
-import { LANG_CODES, isLang } from '@/lib/languages';
+import { transcribeWithFallback } from '@/lib/core/transcribe';
+import { LANG_CODES } from '@/lib/languages';
 import { checkAccess } from '@/lib/server/auth';
 import { errorResponse, jsonError } from '@/lib/server/http';
-import { transcribe } from '@/lib/server/speaches';
+import { serverSpeech } from '@/lib/server/speaches';
 import { logTiming, ms, startTimer } from '@/lib/server/timing';
 
 export const maxDuration = 60;
 
 const MAX_AUDIO_BYTES = 2 * 1024 * 1024; // ~65 s of 16 kHz 16-bit mono; clips are capped at 30 s
-const FALLBACK_LANG = 'ko' as const;
 
 const fieldsSchema = z.object({
   language: z.enum([...LANG_CODES, 'auto']).default('auto'),
@@ -47,29 +47,20 @@ export async function POST(request: Request) {
     const { language, prompt } = fields.data;
     audioBytes = audio.size;
 
-    const forced = language === 'auto' ? undefined : language;
-    const firstCall = startTimer();
-    let result = await transcribe(audio, { language: forced, prompt, signal: request.signal });
-    const speachesMs = firstCall();
-    let fallbackMs: number | undefined;
-
-    // Whisper often mislabels short clips (e.g. "네.") as Japanese or similar.
-    // When auto-detect lands outside the supported set, retry once with the main language.
-    if (!forced && result.text !== '' && !isLang(result.language)) {
-      const retryCall = startTimer();
-      result = await transcribe(audio, { language: FALLBACK_LANG, prompt, signal: request.signal });
-      fallbackMs = retryCall();
-      result.language ??= FALLBACK_LANG;
-    }
+    const { result, firstMs, fallbackMs } = await transcribeWithFallback(serverSpeech, audio, {
+      language,
+      prompt,
+      signal: request.signal,
+    });
 
     logTiming('transcribe', 'ok', {
-      speaches: ms(speachesMs),
+      speaches: ms(firstMs),
       fallback: ms(fallbackMs),
       total: ms(elapsed()),
       audio: ms(result.durationMs),
       size: `${Math.round(audio.size / 1024)}KB`,
       lang: result.language ?? 'none',
-      mode: forced ? 'forced' : 'auto',
+      mode: language === 'auto' ? 'auto' : 'forced',
     });
     return Response.json(result);
   } catch (err) {

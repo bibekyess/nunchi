@@ -1,4 +1,5 @@
 import 'server-only';
+import type { SpeechModel } from '@/lib/core/models';
 import { normalizeWhisperLanguage, type Lang } from '@/lib/languages';
 import type { TranscriptionResult } from '@/lib/types';
 import { getEnv } from './env';
@@ -72,6 +73,9 @@ export async function transcribe(
     })),
   };
 }
+
+/** The Speaches server as a `SpeechModel`. */
+export const serverSpeech: SpeechModel = { transcribe };
 
 export async function pingSpeaches(timeoutMs = 5_000): Promise<boolean> {
   try {

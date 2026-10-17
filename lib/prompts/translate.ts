@@ -1,3 +1,4 @@
+import type { ChatMessage } from '@/lib/core/models';
 import { langName, type Lang } from '@/lib/languages';
 import type { GlossaryEntry, TranslationContextItem } from '@/lib/types';
 
@@ -8,11 +9,6 @@ export interface TranslatePromptInput {
   context: TranslationContextItem[];
   glossary: GlossaryEntry[];
   meetingContext?: string;
-}
-
-export interface ChatMessage {
-  role: 'system' | 'user';
-  content: string;
 }
 
 function glossaryLines(glossary: GlossaryEntry[]): string {

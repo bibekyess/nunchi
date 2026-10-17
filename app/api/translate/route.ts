@@ -1,12 +1,10 @@
 import { z } from 'zod';
 import { LANG_CODES } from '@/lib/languages';
-import { buildTranslateMessages } from '@/lib/prompts/translate';
+import { startTranslation, type TranslationRun } from '@/lib/core/translate';
 import { checkAccess } from '@/lib/server/auth';
-import { getEnv } from '@/lib/server/env';
 import { errorResponse, isTimeoutError, jsonError, UpstreamError } from '@/lib/server/http';
-import { getLlm, VLLM_NO_THINKING } from '@/lib/server/llm';
+import { serverChat } from '@/lib/server/llm';
 import { logTiming, ms, startTimer } from '@/lib/server/timing';
-import { ThinkStripper } from '@/lib/think-stripper';
 
 export const maxDuration = 60;
 
@@ -28,8 +26,6 @@ const bodySchema = z.object({
   /** Second attempt after an empty or untranslated result: answer deterministically. */
   retry: z.boolean().optional(),
 });
-
-const MAX_TOKENS = 400;
 
 function toUpstreamError(err: unknown): UpstreamError {
   if (err instanceof UpstreamError) return err;
@@ -56,25 +52,12 @@ export async function POST(request: Request) {
       return jsonError('bad_request', `${issue?.path.join('.') || 'body'}: ${issue?.message}`);
     }
 
-    const env = getEnv();
-    const llm = getLlm();
-    const messages = buildTranslateMessages(parsed.data);
     const dir = `${parsed.data.sourceLang}->${parsed.data.targetLang}`;
 
     // Open the upstream stream before answering, so connection errors become a JSON error.
-    let upstream;
+    let run: TranslationRun;
     try {
-      upstream = await llm.chat.completions.create(
-        {
-          model: env.LLM_MODEL,
-          messages,
-          stream: true,
-          temperature: parsed.data.retry ? 0 : 0.2,
-          max_tokens: MAX_TOKENS,
-          ...VLLM_NO_THINKING,
-        },
-        { signal: request.signal },
-      );
+      run = await startTranslation(serverChat, parsed.data, request.signal);
     } catch (err) {
       // The client went away (stopped, navigated); nothing to send back.
       if (request.signal.aborted) {
@@ -88,10 +71,8 @@ export async function POST(request: Request) {
     const encoder = new TextEncoder();
     const body = new ReadableStream<Uint8Array>({
       async start(controller) {
-        const stripper = new ThinkStripper();
         let emitted = '';
         let ttftMs: number | undefined;
-        let emptyRetry = false;
         const timings = () => ({
           open: ms(openMs),
           ttft: ms(ttftMs),
@@ -106,31 +87,11 @@ export async function POST(request: Request) {
         };
 
         try {
-          for await (const chunk of upstream) {
-            send(stripper.push(chunk.choices[0]?.delta?.content ?? ''));
-          }
-          send(stripper.flush());
-
-          // Empty output: retry once, deterministically, without streaming.
-          if (emitted.trim() === '' && !request.signal.aborted) {
-            emptyRetry = true;
-            const retry = await llm.chat.completions.create(
-              {
-                model: env.LLM_MODEL,
-                messages,
-                temperature: 0,
-                max_tokens: MAX_TOKENS,
-                ...VLLM_NO_THINKING,
-              },
-              { signal: request.signal },
-            );
-            const again = new ThinkStripper();
-            send(again.push(retry.choices[0]?.message?.content ?? '') + again.flush());
-          }
+          for await (const text of run.text) send(text);
           logTiming('translate', 'ok', {
             ...timings(),
             out: `${emitted.length}ch`,
-            retry: emptyRetry ? 'empty' : parsed.data.retry ? 'client' : undefined,
+            retry: run.emptyRetry ? 'empty' : parsed.data.retry ? 'client' : undefined,
           });
           controller.close();
         } catch (err) {
@@ -146,7 +107,7 @@ export async function POST(request: Request) {
         }
       },
       cancel() {
-        upstream.controller.abort();
+        run.abort();
       },
     });
 
