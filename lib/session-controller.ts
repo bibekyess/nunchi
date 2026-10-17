@@ -12,17 +12,11 @@ import { getEngines } from './engines/registry';
 import { PipelineQueue } from './pipeline/queue';
 import { getEngineChoice } from './settings/engines';
 import { sessionStore } from './store/session-store';
+import { waitForOnline } from './util/online';
 import { ScreenWakeLock } from './wake-lock';
 
 /** If no audio frame arrives this long after the page becomes visible, the mic was cut. */
 const STALL_MS = 1500;
-
-function waitForOnline(): Promise<void> {
-  if (typeof navigator === 'undefined' || navigator.onLine) return Promise.resolve();
-  return new Promise((resolve) =>
-    window.addEventListener('online', () => resolve(), { once: true }),
-  );
-}
 
 /**
  * Owns everything with a lifetime outside React for one live session: the mic recorder,

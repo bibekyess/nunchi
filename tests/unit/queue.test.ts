@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/engines/server';
 import type { SpeechEngine, TranslateEngine, TranslateRequest } from '@/lib/engines/types';
 import { EngineError } from '@/lib/errors';
-import { PipelineQueue, type QueueDeps } from '@/lib/pipeline/queue';
+import { MAX_PENDING_CLIPS, PipelineQueue, type QueueDeps } from '@/lib/pipeline/queue';
 import { sessionStore } from '@/lib/store/session-store';
 import type { TranscriptionResult } from '@/lib/types';
 
@@ -318,6 +318,51 @@ describe('PipelineQueue', () => {
     gate.resolve(tr('늦은 답'));
     await flush();
     expect(state().byId[id].status).toBe('transcribing');
+  });
+
+  // Review finding C: past the cap, the oldest waiting clips are dropped for real.
+  it('drops the oldest clips past the cap: never sent, error kept, audio let go', async () => {
+    const online = deferred<void>();
+    const transcribe = vi.fn(async () => tr('안녕하세요.'));
+    const q = new PipelineQueue(makeDeps({ transcribe, waitForOnline: () => online.promise }));
+    const clips = Array.from({ length: MAX_PENDING_CLIPS + 3 }, () => clip());
+    const ids = clips.map((c) => q.enqueue(c));
+    await flush();
+    expect(q.pendingClips).toBe(MAX_PENDING_CLIPS);
+
+    online.resolve(); // back online: the waiting jobs run
+    for (let i = 0; i < 40; i++) await flush();
+
+    const dropped = ids.slice(0, 3);
+    for (const id of dropped) {
+      expect(state().byId[id]).toMatchObject({
+        status: 'error',
+        error: 'Dropped: too many clips waiting for the network',
+      });
+    }
+    const sent = transcribe.mock.calls.map((call) => (call as unknown[])[0]);
+    for (const c of clips.slice(0, 3)) expect(sent).not.toContain(c.audio);
+    expect(transcribe).toHaveBeenCalledTimes(MAX_PENDING_CLIPS);
+    expect(state().byId[ids[3]].status).toBe('done');
+  });
+
+  // Review finding G: a job waiting for the network ends when the queue is disposed.
+  it('cancels the wait for the network on dispose', async () => {
+    const signals: (AbortSignal | undefined)[] = [];
+    const q = new PipelineQueue(
+      makeDeps({
+        waitForOnline: (signal?: AbortSignal) => {
+          signals.push(signal);
+          return new Promise<void>(() => {});
+        },
+      }),
+    );
+    q.enqueue(clip());
+    await flush();
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.aborted).toBe(false);
+    q.dispose();
+    expect(signals[0]?.aborted).toBe(true);
   });
 
   it('ignores clips that arrive after dispose', async () => {
