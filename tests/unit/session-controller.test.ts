@@ -103,6 +103,13 @@ describe('SessionController', () => {
     expect(sessionStore.getState().recorder).not.toBe('listening');
   });
 
+  it('does not reopen the microphone when resumed after dispose', async () => {
+    const controller = new SessionController();
+    controller.dispose();
+    await controller.resume();
+    expect(mocks.openAudioInput).not.toHaveBeenCalled();
+  });
+
   it('starts normally when nothing interrupts it', async () => {
     const input = fakeInput();
     const recorder = fakeRecorder();

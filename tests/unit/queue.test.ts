@@ -170,6 +170,41 @@ describe('PipelineQueue', () => {
     expect(state().byId[id]).toMatchObject({ status: 'done', sourceText: '다시' });
   });
 
+  it('retries every failed line from where it failed', async () => {
+    let speechDown = true;
+    let llmDown = true;
+    let sentence = 0;
+    const transcribe = vi.fn(async (): Promise<TranscriptionResult> => {
+      if (speechDown) throw new ApiError(400, 'bad_request', 'Speech failed.');
+      return tr(`문장 ${++sentence}.`); // distinct, so the repeat filter keeps them
+    });
+    const translate = vi.fn(async (_b: TranslateRequest, onDelta: (d: string) => void) => {
+      if (llmDown) throw new ApiError(400, 'bad_request', 'Translation failed.');
+      onDelta('Fine.');
+      return 'Fine.';
+    });
+    const q = new PipelineQueue(makeDeps({ transcribe, translate }));
+    speechDown = false;
+    const translateFailed = q.enqueue(clip()); // transcribes, then fails to translate
+    await flush();
+    speechDown = true;
+    const speechFailed = q.enqueue(clip()); // fails to transcribe
+    await flush();
+    expect(q.failedCount()).toBe(2);
+    expect(state().byId[translateFailed].error).toBe('Translation failed.');
+    expect(state().byId[speechFailed].error).toBe('Speech failed.');
+
+    speechDown = false;
+    llmDown = false;
+    transcribe.mockClear();
+    q.retryAllFailed();
+    await flush();
+    expect(q.failedCount()).toBe(0);
+    expect(transcribe).toHaveBeenCalledTimes(1); // only the line whose audio failed
+    expect(state().byId[translateFailed]).toMatchObject({ status: 'done', translation: 'Fine.' });
+    expect(state().byId[speechFailed]).toMatchObject({ status: 'done', translation: 'Fine.' });
+  });
+
   it('does not retry 4xx errors and flags a missing access token', async () => {
     const transcribe = vi.fn(async () => {
       throw new ApiError(401, 'unauthorized', 'Missing or wrong access token.');
