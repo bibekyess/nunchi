@@ -1,5 +1,6 @@
 // Errors from any engine (server routes today; endpoints and on-device models later), in a
 // form the pipeline can act on without knowing the transport. Client- and server-safe.
+import type { EngineId } from './engines/types';
 
 /** Header carrying the shared passcode (APP_ACCESS_TOKEN) from the browser to /api/*. */
 export const ACCESS_TOKEN_HEADER = 'x-nunchi-token';
@@ -16,14 +17,22 @@ const RETRYABLE: ReadonlySet<EngineErrorKind> = new Set(['network', 'timeout', '
 
 export class EngineError extends Error {
   readonly retryable: boolean;
+  /** Which engine failed, when known. A server `auth` error means the passcode is missing. */
+  readonly engine?: EngineId;
 
   constructor(
     public readonly kind: EngineErrorKind,
     message: string,
-    retryable?: boolean,
+    opts: { retryable?: boolean; engine?: EngineId } = {},
   ) {
     super(message);
     this.name = 'EngineError';
-    this.retryable = retryable ?? RETRYABLE.has(kind);
+    this.retryable = opts.retryable ?? RETRYABLE.has(kind);
+    this.engine = opts.engine;
+  }
+
+  /** The app server wants the shared passcode (APP_ACCESS_TOKEN). */
+  get needsPasscode(): boolean {
+    return this.kind === 'auth' && this.engine === 'server';
   }
 }

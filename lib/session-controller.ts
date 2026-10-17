@@ -8,7 +8,7 @@ import {
 } from './audio/sources';
 import { SpeechRecorder } from './audio/vad';
 import { loadVadSettings, type VadSettings } from './audio/vad-settings';
-import { serverSpeech, serverTranslate } from './engines/server';
+import { getEngines } from './engines/registry';
 import { PipelineQueue } from './pipeline/queue';
 import { sessionStore } from './store/session-store';
 import { ScreenWakeLock } from './wake-lock';
@@ -38,8 +38,7 @@ export class SessionController {
   constructor() {
     this.queue = new PipelineQueue({
       getState: sessionStore.getState,
-      transcribe: (audio, opts) => serverSpeech.transcribe(audio, opts),
-      translate: (request, onDelta, signal) => serverTranslate.translate(request, onDelta, signal),
+      engines: getEngines,
       newId: () => crypto.randomUUID(),
       sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
       waitForOnline,

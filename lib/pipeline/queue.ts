@@ -1,8 +1,8 @@
-import type { TranslateRequest } from '@/lib/engines/types';
+import type { Engines, TranslateRequest } from '@/lib/engines/types';
 import type { Clip } from '@/lib/audio/vad';
 import { EngineError } from '@/lib/errors';
 import type { SessionState } from '@/lib/store/session-store';
-import type { Lang, TranscriptionResult, TranslationContextItem, Utterance } from '@/lib/types';
+import type { TranscriptionResult, TranslationContextItem, Utterance } from '@/lib/types';
 import { Semaphore } from '@/lib/util/concurrency';
 import { pickDirection } from './direction';
 import { hallucinationReason } from './hallucinations';
@@ -15,16 +15,8 @@ export const MAX_PENDING_CLIPS = 50; // ~15 MB of audio
 
 export interface QueueDeps {
   getState: () => SessionState;
-  /** Transcribes one clip of 16 kHz mono samples; engines encode it as they need. */
-  transcribe: (
-    audio: Float32Array,
-    opts: { language: Lang | 'auto'; prompt?: string; signal?: AbortSignal },
-  ) => Promise<TranscriptionResult>;
-  translate: (
-    body: TranslateRequest,
-    onDelta: (delta: string) => void,
-    signal?: AbortSignal,
-  ) => Promise<string>;
+  /** The engines chosen right now; read per job, so a change applies from the next line. */
+  engines: () => Pick<Engines, 'speech' | 'translate'>;
   newId: () => string;
   sleep: (ms: number) => Promise<void>;
   /** Resolves once the browser is online (immediately if it already is). */
@@ -111,16 +103,23 @@ export class PipelineQueue {
 
   private fail(id: string, err: unknown) {
     if (this.signal.aborted || (err as Error)?.name === 'AbortError') return;
-    if (err instanceof EngineError && err.kind === 'auth')
+    if (err instanceof EngineError && err.needsPasscode) {
       this.deps.getState().setNeedsAccessToken(true);
+    }
     const message = err instanceof EngineError ? err.message : 'Something went wrong';
     this.patch(id, { status: 'error', error: message });
   }
 
-  /** Runs `attempt` with retries for network/5xx errors, waiting for connectivity first. */
-  private async withRetries<T>(attempt: () => Promise<T>): Promise<T> {
+  /**
+   * Runs `attempt` with retries for network/5xx errors. Engines that need the network wait
+   * for connectivity first; on-device ones run offline.
+   */
+  private async withRetries<T>(
+    engine: { needsNetwork: boolean },
+    attempt: () => Promise<T>,
+  ): Promise<T> {
     for (let i = 0; ; i++) {
-      await this.deps.waitForOnline();
+      if (engine.needsNetwork) await this.deps.waitForOnline();
       try {
         return await attempt();
       } catch (err) {
@@ -171,11 +170,12 @@ export class PipelineQueue {
     this.patch(id, { status: 'transcribing', error: undefined });
 
     const { mode, glossary } = state.session;
+    const speech = this.deps.engines().speech;
     let result: TranscriptionResult;
     try {
       result = await this.transcribeSlots.run(() =>
-        this.withRetries(() =>
-          this.deps.transcribe(clip.audio, {
+        this.withRetries(speech, () =>
+          speech.transcribe(clip.audio, {
             language: mode.source,
             prompt: buildWhisperPrompt(glossary, this.previousSource(u.seq)),
             signal: this.signal,
@@ -224,10 +224,11 @@ export class PipelineQueue {
     const append = (delta: string) => {
       if (!this.signal.aborted) this.deps.getState().appendTranslation(id, delta);
     };
+    const translator = this.deps.engines().translate;
     const streamOnce = (request: TranslateRequest) =>
-      this.withRetries(async () => {
+      this.withRetries(translator, async () => {
         this.patch(id, { translation: '' }); // a retried stream starts over
-        return this.deps.translate(request, append, this.signal);
+        return translator.translate(request, append, this.signal);
       });
 
     try {

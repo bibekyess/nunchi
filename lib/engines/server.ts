@@ -45,11 +45,10 @@ export class ApiError extends EngineError {
     message: string,
   ) {
     // Network failures, timeouts and 5xx are worth retrying; 4xx are not.
-    super(
-      kindOf(status),
-      message,
-      status === 0 || status === 408 || status === 429 || status >= 500,
-    );
+    super(kindOf(status), message, {
+      retryable: status === 0 || status === 408 || status === 429 || status >= 500,
+      engine: 'server',
+    });
     this.name = 'ApiError';
   }
 }

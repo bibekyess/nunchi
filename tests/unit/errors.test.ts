@@ -10,7 +10,14 @@ describe('EngineError', () => {
     expect(new EngineError('auth', 'x').retryable).toBe(false);
     expect(new EngineError('bad_request', 'x').retryable).toBe(false);
     expect(new EngineError('unavailable', 'x').retryable).toBe(false);
-    expect(new EngineError('auth', 'x', true).retryable).toBe(true);
+    expect(new EngineError('auth', 'x', { retryable: true }).retryable).toBe(true);
+  });
+
+  it('asks for the passcode only on server auth errors', () => {
+    expect(new EngineError('auth', 'x', { engine: 'server' }).needsPasscode).toBe(true);
+    expect(new EngineError('auth', 'x', { engine: 'endpoint' }).needsPasscode).toBe(false);
+    expect(new EngineError('auth', 'x').needsPasscode).toBe(false);
+    expect(new EngineError('upstream', 'x', { engine: 'server' }).needsPasscode).toBe(false);
   });
 });
 
@@ -26,6 +33,7 @@ describe('ApiError', () => {
   ] as const)('status %i is %s, retryable %s', (status, kind, retryable) => {
     const err = new ApiError(status, 'code', 'message');
     expect(err).toBeInstanceOf(EngineError);
+    expect(err.engine).toBe('server');
     expect(err.kind).toBe(kind);
     expect(err.retryable).toBe(retryable);
   });

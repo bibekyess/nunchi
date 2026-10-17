@@ -38,7 +38,7 @@ function notBuilt(id: EngineId) {
     reason: 'Coming soon.',
   });
   const fail = async (): Promise<never> => {
-    throw new EngineError('unavailable', message);
+    throw new EngineError('unavailable', message, { engine: id });
   };
   return { id, needsNetwork: false, status, fail };
 }

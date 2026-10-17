@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { serverSummary } from '@/lib/engines/server';
+import { getEngine } from '@/lib/engines/registry';
 import { EngineError } from '@/lib/errors';
 import type { Lang } from '@/lib/languages';
 import { sessionStore, useSessionStore } from '@/lib/store/session-store';
 
-/** Translated lines in speech order, as the summary route expects them. */
+/** Translated lines in speech order, as summary engines expect them. */
 function transcriptLines() {
   const { ids, byId } = sessionStore.getState();
   return ids
@@ -39,8 +39,9 @@ export function useSummary() {
       setStreamed('');
       setError('');
       try {
+        const engine = getEngine('summary');
         let text = '';
-        text = await serverSummary.summarize(
+        text = await engine.summarize(
           {
             utterances: transcriptLines(),
             glossary: session.glossary,
@@ -53,12 +54,15 @@ export function useSummary() {
           },
           controller.signal,
         );
-        if (!text.trim()) throw new EngineError('upstream', 'The summary came back empty.');
+        if (!text.trim())
+          throw new EngineError('upstream', 'The summary came back empty.', {
+            engine: engine.id,
+          });
         setSummary(text.trim(), lang);
         setPhase('idle');
       } catch (err) {
         if ((err as Error)?.name === 'AbortError') return;
-        if (err instanceof EngineError && err.kind === 'auth') {
+        if (err instanceof EngineError && err.needsPasscode) {
           sessionStore.getState().setNeedsAccessToken(true);
         }
         setError(err instanceof EngineError ? err.message : 'Could not summarize.');
