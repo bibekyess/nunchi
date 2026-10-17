@@ -1,17 +1,22 @@
-/** Runs tasks with at most `size` in flight; waiting tasks start in the order they arrived. */
+/**
+ * Runs tasks with at most `size` in flight; waiting tasks start in the order they arrived. A
+ * finished task hands its slot straight to the next waiter, so a newcomer arriving in between
+ * can't take it and run alongside (over the limit, ahead of the queue).
+ */
 export class Semaphore {
   private waiting: (() => void)[] = [];
   private active = 0;
   constructor(private readonly size: number) {}
 
   async run<T>(task: () => Promise<T>): Promise<T> {
-    if (this.active >= this.size) await new Promise<void>((r) => this.waiting.push(r));
-    this.active++;
+    if (this.active < this.size) this.active++;
+    else await new Promise<void>((r) => this.waiting.push(r)); // the slot arrives already counted
     try {
       return await task();
     } finally {
-      this.active--;
-      this.waiting.shift()?.();
+      const next = this.waiting.shift();
+      if (next) next();
+      else this.active--;
     }
   }
 }
