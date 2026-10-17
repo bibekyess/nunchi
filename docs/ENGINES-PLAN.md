@@ -1,6 +1,7 @@
 # Engines plan: Server, Custom endpoint and On-device processing
 
-Status: approved 2026-10-17. Phases 0, 1 and 2 done (see `docs/DECISIONS.md`).
+Status: approved 2026-10-17. Phases 0, 1 and 2 done, plus a hardening pass before Phase 3
+(see `docs/DECISIONS.md`).
 
 ## Why
 
@@ -117,6 +118,23 @@ reload.
 Done when: a full session works against a local Speaches + Ollama with the server upstreams
 off, and against the mock in e2e.
 
+## Hardening before Phase 3 (done)
+
+From an independent review of Phases 0–2; details in `docs/DECISIONS.md`.
+
+| #   | What                                                                                                               |
+| --- | ------------------------------------------------------------------------------------------------------------------ |
+| H1  | Idle timeout on every stream (SSE, server engine bodies, server `streamText`); overall limit on `/api/*` calls     |
+| H2  | Leaving mid-start closes the mic; the queue ignores clips after dispose; force-split race fixed                    |
+| H3  | Per-job cancel on clip eviction; cancellable `waitForOnline`                                                       |
+| H4  | `SpeechModel` takes `Float32Array`; `/api/transcribe` decodes and validates the WAV; Speaches on the shared client |
+| H5  | FIFO semaphore handoff                                                                                             |
+| H6  | One `endpointClient()` and `hostOf`                                                                                |
+| H7  | One endpoint validator (`endpointIssues`); pure `engine-settings.ts` + `use-engine-settings.ts`                    |
+| H8  | `lib/engines/ids.ts` leaf module; lint rule keeping `lib/core`, `lib/util` and pure settings portable              |
+| H9  | Request size caps, summary input cap, config check at boot, 429 mapping                                            |
+| H10 | Tests for the above, summary supersede/abort, retry-all; docs                                                      |
+
 ## Phase 3: On-device with WebGPU (laptop/desktop)
 
 **3.0 Test build (go/no-go gate)** behind a hidden flag:
@@ -133,17 +151,23 @@ Gate: median end of speech → translation start ≤ 3 s on the target laptop, a
 Korean quality vs Server mode on the fixture plus a 10-minute talk. Record numbers in
 DECISIONS.
 
-| #   | Where                                    | What                                                                                                                                                                                                                        |
-| --- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 3.1 | new `lib/device/worker.ts` + `client.ts` | One module worker (`new Worker(new URL(...), {type:'module'})`) with a typed protocol: load, progress, transcribe, generate, dispose. One GPU queue: speech before translation. transformers.js loaded only in device mode. |
-| 3.2 | `lib/engines/device-speech.ts`           | Whisper engine; hallucination signals from 3.0(c) or text-only filters.                                                                                                                                                     |
-| 3.3 | `lib/engines/device-translate.ts`        | Chrome Translator adapter (`availability()`, download progress, `translateStreaming`); glossary terms protected by substitution. Plus the WebGPU LLM option if the test build favors it.                                    |
-| 3.4 | Capability check                         | WebGPU adapter, `shader-f16`, buffer limits, `deviceMemory`; explain disabled options.                                                                                                                                      |
-| 3.5 | Model manager UI                         | Size, download progress, delete, storage estimate, `navigator.storage.persist()`.                                                                                                                                           |
-| 3.6 | Offline startup                          | Service worker caching the app shell, VAD model and WASM files (Next 16 PWA guide). Restores the PWA manifest.                                                                                                              |
-| 3.7 | Summary on device                        | Experimental, smaller parts; default suggests Server or Endpoint.                                                                                                                                                           |
-| 3.8 | Runtime duplication                      | vad-web uses onnxruntime-web 1.30, transformers.js pins 1.31-dev: separate WASM paths, extend `scripts/copy-vad-assets.mjs`.                                                                                                |
-| 3.9 | Tests                                    | Worker logic with a fake pipeline; e2e with a fake device engine; manual hardware checklist including an airplane-mode session.                                                                                             |
+| #    | Where                                             | What                                                                                                                                                                                                                                                                                                                                                                     |
+| ---- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 3.1  | new `lib/device/worker.ts` + `client.ts`          | One module worker (`new Worker(new URL(...), {type:'module'})`) with a typed protocol: load, progress, transcribe, generate, dispose. One GPU queue: speech before translation. transformers.js loaded only in device mode.                                                                                                                                              |
+| 3.2  | `lib/engines/device-speech.ts`                    | Whisper engine; hallucination signals from 3.0(c) or text-only filters.                                                                                                                                                                                                                                                                                                  |
+| 3.3  | `lib/engines/device-translate.ts`                 | Chrome Translator adapter (`availability()`, download progress, `translateStreaming`); glossary terms protected by substitution. Plus the WebGPU LLM option if the test build favors it.                                                                                                                                                                                 |
+| 3.4  | Capability check                                  | WebGPU adapter, `shader-f16`, buffer limits, `deviceMemory`; explain disabled options.                                                                                                                                                                                                                                                                                   |
+| 3.5  | Model manager UI                                  | Size, download progress, delete, storage estimate, `navigator.storage.persist()`.                                                                                                                                                                                                                                                                                        |
+| 3.6  | Offline startup                                   | Service worker caching the app shell, VAD model and WASM files (Next 16 PWA guide). Restores the PWA manifest.                                                                                                                                                                                                                                                           |
+| 3.7  | Summary on device                                 | Experimental, smaller parts; default suggests Server or Endpoint.                                                                                                                                                                                                                                                                                                        |
+| 3.8  | Runtime duplication                               | vad-web uses onnxruntime-web 1.30, transformers.js pins 1.31-dev: separate WASM paths, extend `scripts/copy-vad-assets.mjs`.                                                                                                                                                                                                                                             |
+| 3.9  | Tests                                             | Worker logic with a fake pipeline; e2e with a fake device engine; manual hardware checklist including an airplane-mode session.                                                                                                                                                                                                                                          |
+| 3.10 | `lib/engines/registry.ts`, `types.ts`             | Engine lifecycle: a factory table `Record<EngineId, Record<EngineTask, Factory>>` with instances cached per settings, and optional `prepare(signal)` / `dispose()` on engines; `BUILT_ENGINES` and the if/else chains derive from the table.                                                                                                                             |
+| 3.11 | `lib/engines/types.ts`                            | Status model: add `needs_download` (with size) and `downloading` (progress), plus `subscribe(cb)` beside `status()`; `needsNetwork` becomes a function (a model not yet downloaded needs the network).                                                                                                                                                                   |
+| 3.12 | `lib/device/scheduler.ts`, queue                  | One GPU scheduler shared by device engines (speech ahead of translation), or engine-declared concurrency; the queue stays unaware of the transport. Built on the FIFO `Semaphore`.                                                                                                                                                                                       |
+| 3.13 | `lib/settings/engine-settings.ts`, `lib/types.ts` | Device settings `device: { speech: { model }, translate: { backend: 'chrome' \| 'webgpu', model } }` with sanitize and migration tests; `Session.engines` also records endpoint and device model ids.                                                                                                                                                                    |
+| 3.14 | session + device runtime                          | `navigator.locks`: one tab per live session, and one device runtime (model weights) per browser.                                                                                                                                                                                                                                                                         |
+| 3.15 | `lib/device/*` layout                             | `protocol.ts` (typed messages, `lib/core` types only), `worker.ts` (imports only `lib/core`, `lib/think-stripper`, transformers.js), `client.ts` (request ids, AbortSignal → cancel message, `withIdleTimeout`), `capabilities.ts`, `models.ts` (download manager, storage estimate). Extend the portable-imports lint rule to `lib/device/worker.ts` and `protocol.ts`. |
 
 Done when: a 10-minute Korean session runs in airplane mode on the target laptop and meets
 the gate.

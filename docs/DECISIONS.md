@@ -2,6 +2,77 @@
 
 Changes to, or details not covered by, the implementation plan. Newest first.
 
+## 2026-10-17 — Hardening before Phase 3
+
+An independent review of Phases 0–2 found long-running failure modes and a few structural
+issues that Phase 3 (workers, device models) would have inherited. Each fix below has a test
+that fails on the code before it. Server mode is unchanged otherwise: `pnpm smoke` against
+`pnpm mock`, the route probes and the server's log lines (timings aside) match Phase 2.
+
+- **Stalled streams time out.** `withIdleTimeout` (`lib/util/streams.ts`) wraps a stream and
+  throws a retryable timeout when the next piece takes too long, stopping the upstream. Limits:
+  OpenAI-compatible SSE streams allow the call's timeout for the first event (prompt
+  processing), then 30 s between events (`DEFAULT_STREAM_IDLE_MS`); the server engine's
+  streamed bodies 90 s (210 s for the summary's first piece); the server's `streamText` 90 s as
+  a backstop (210 s for the summary's first piece). Every `/api/*` call from the browser also
+  has an overall limit (`CALL_TIMEOUT_MS`: transcribe 90 s, translate 150 s, summary 20 min,
+  health 10 s), built on `AbortSignal.any` so a cancel is still an AbortError. Before, a
+  half-open connection held one of the queue's two slots for the rest of the session.
+- **Leaving mid-start closes the mic.** `SessionController.start()` checks a `disposed` flag
+  after every await and closes what it just opened; the queue ignores clips after dispose; the
+  25 s force-split doesn't restart detection that was paused or destroyed meanwhile (this also
+  ended an unhandled rejection).
+- **Dropped clips are really dropped.** Each transcription job has its own AbortController,
+  cancelled when the 50-clip cap evicts its clip. The audio is looked up when it is sent, so a
+  waiting job doesn't hold it, and a dropped line keeps its "Dropped" error instead of being
+  transcribed once back online. `waitForOnline` (`lib/util/online.ts`) takes the job's signal
+  and removes its listener when cancelled.
+- **The speech model takes samples.** `SpeechModel.transcribe(audio: Float32Array)`; HTTP
+  models encode the WAV. `/api/transcribe` decodes the upload with `decodeWav` (16 kHz mono
+  16-bit PCM only; anything else is a 400) and Speaches gets it re-encoded byte for byte: the
+  decoder returns the middle of each step `encodeWav` truncates to, since a plain `v / 32767`
+  loses a step on about half the values once stored as float32. Chosen over keeping a Blob
+  path so `transcribeWithFallback` is the same code for every engine, including Phase 3's
+  Whisper worker. Speaches transcription uses the shared client; errors go through
+  `toUpstreamError(err, 'speaches')`.
+- **Semaphore:** a freed slot passes straight to the next waiter (FIFO). Before, a call
+  arriving in between could take it and run alongside the waiter, over the limit.
+- **One endpoint client** (`endpointClient(config, kind)`) for the engines and Test
+  connection, and one exported `hostOf`.
+- **One endpoint validator:** `endpointIssues()` returns `{ field, message }[]` for the dialog,
+  the engines and saving. A custom header name with a space (or a name without a value) now
+  blocks saving with a message, instead of being dropped on save and failing later with a 401.
+  The dialog shows the first issue and marks every field that has one.
+- **Settings split:** `lib/settings/engine-settings.ts` is pure (no React, stores or
+  import-time listeners; plain `includes` instead of zod), so a worker can use it;
+  `use-engine-settings.ts` has the zustand store, hooks and the cross-tab listener.
+- **Layering:** engine and task names live in `lib/engines/ids.ts`, which imports nothing, so
+  `lib/types`, `lib/errors` and `lib/core` no longer depend on the engines layer, and there are
+  no import cycles. ESLint's `no-restricted-imports` keeps `lib/core`, `lib/util` and the pure
+  settings free of React, Next, zustand, stores, settings hooks, server-only code, components
+  and the engines (except `ids`).
+- **Request limits:** bodies are read with a cap, refused from `Content-Length` before
+  reading or as soon as a streamed body passes it: 2 MB + 64 KB for a clip, 1 MB for a
+  translation, 2 MB for a summary. A summary's transcript is capped at 300,000 characters
+  (`SUMMARY_MAX_CHARS`): a two-hour meeting is about 180,000, so this allows roughly three
+  hours of dense talk, at most ~13 parts, instead of hundreds of LLM calls.
+- **Config checked at boot:** `instrumentation.ts` validates the environment once when the
+  server starts. An invalid one prints the usual "Invalid server environment" message and
+  exits, since Next alone logs it and keeps serving 500s. A production server with upstreams
+  but no `APP_ACCESS_TOKEN` logs a warning. Builds skip the check (`NEXT_PHASE`), so they still
+  need no secrets.
+- **429 from `/api/*`** is a retryable `upstream` error, as in the endpoint client (it was
+  `bad_request` yet retryable).
+- **Summary generation** moved from the `useSummary` hook into `generateSummary()`, which
+  reports and saves nothing once its signal aborts, so a superseded request whose engine
+  ignores the abort can't overwrite the newer summary.
+
+Left for Phase 3, where they belong next to the device engines (see `ENGINES-PLAN.md`): an
+engine factory table with `prepare`/`dispose`, a richer status with download progress and
+`subscribe`, `needsNetwork` as a function, a GPU scheduler, device settings, and
+`navigator.locks`. Skipped for now: storing the recent-list preview on the session and the
+banner's per-update failed count; neither matters at today's sizes.
+
 ## 2026-10-17 — Engines Phase 2
 
 **Custom** endpoints work: each task can run on an OpenAI-compatible server that the browser
