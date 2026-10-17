@@ -61,6 +61,6 @@ test('processing: a choice survives a reload', async ({ page }) => {
       .getByRole('radio', { name: 'Server', exact: true }),
   ).toBeChecked();
   expect(
-    await page.evaluate(() => JSON.parse(localStorage.getItem('nunchi.engines') ?? 'null')),
+    await page.evaluate(() => JSON.parse(localStorage.getItem('nunchi.engines') ?? 'null').choice),
   ).toEqual({ speech: 'server', translate: 'server', summary: 'server' });
 });

@@ -3,6 +3,8 @@ import { defineConfig, devices } from '@playwright/test';
 // Smoke test: real Chromium with a fake microphone playing tests/fixtures/speech-en.wav,
 // against the production build and the mock upstreams. Run `pnpm build` first.
 const PORT = 3100;
+// A second app server with no upstreams at all, for custom-endpoint mode (custom-endpoint.spec.ts).
+const CUSTOM_PORT = 3101;
 // Override when 8788 is taken on this machine.
 const MOCK_PORT = process.env.E2E_MOCK_PORT ?? '8788';
 
@@ -42,6 +44,13 @@ export default defineConfig({
         LLM_HEADER_VALUE: 'mock-secret',
       },
       url: `http://localhost:${PORT}`,
+      reuseExistingServer: false,
+    },
+    {
+      command: `node node_modules/next/dist/bin/next start -p ${CUSTOM_PORT}`,
+      // Empty values override .env.local: this server has no speech or LLM upstream.
+      env: { SPEACHES_BASE_URL: '', LLM_BASE_URL: '', LLM_MODEL: '' },
+      url: `http://localhost:${CUSTOM_PORT}`,
       reuseExistingServer: false,
     },
   ],

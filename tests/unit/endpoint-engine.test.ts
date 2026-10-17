@@ -1,8 +1,16 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { endpointSpeech, endpointTranslate, isLoopback } from '@/lib/engines/endpoint';
+import { http, HttpResponse } from 'msw';
+import { setupServer } from 'msw/node';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import {
+  endpointSpeech,
+  endpointSummary,
+  endpointTranslate,
+  isLoopback,
+} from '@/lib/engines/endpoint';
 import type { TranslateRequest } from '@/lib/engines/types';
 import { EngineError } from '@/lib/errors';
 import { EMPTY_ENDPOINT } from '@/lib/settings/engines';
+import { chatJson, chatStream } from '../integration/helpers';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -62,5 +70,85 @@ describe('endpoint engines', () => {
       state: 'error',
       reason: 'The endpoint refused the API key.',
     });
+  });
+});
+
+describe('endpoint engines against an OpenAI-compatible server', () => {
+  const BASE = 'http://gpu.test/v1';
+  const server = setupServer();
+  beforeAll(() => server.listen({ onUnhandledFrame: 'error' }));
+  afterAll(() => server.close());
+  afterEach(() => server.resetHandlers());
+
+  const remote = { ...EMPTY_ENDPOINT, baseUrl: BASE, model: 'm', apiKey: 'k' };
+
+  it('transcribes as WAV and retries once in Korean when auto-detect lands elsewhere', async () => {
+    const languages: (string | null)[] = [];
+    server.use(
+      http.post(`${BASE}/audio/transcriptions`, async ({ request }) => {
+        const form = await request.formData();
+        languages.push(form.get('language') as string | null);
+        const file = form.get('file') as File;
+        expect(new TextDecoder().decode((await file.arrayBuffer()).slice(0, 4))).toBe('RIFF');
+        return HttpResponse.json(
+          form.get('language')
+            ? { text: '네.', language: 'ko', duration: 0.5 }
+            : { text: 'ね。', language: 'japanese', duration: 0.5 },
+        );
+      }),
+    );
+    const result = await endpointSpeech(remote).transcribe(new Float32Array(8000), {
+      language: 'auto',
+    });
+    expect(languages).toEqual([null, 'ko']);
+    expect(result).toMatchObject({ text: '네.', language: 'ko' });
+  });
+
+  it('streams a translation with reasoning removed, retrying once when it comes back empty', async () => {
+    let calls = 0;
+    server.use(
+      http.post(`${BASE}/chat/completions`, async ({ request }) => {
+        calls++;
+        const body = (await request.json()) as { stream?: boolean };
+        if (body.stream) return chatStream(['<think>\n\n</think>\n\n']); // nothing but reasoning
+        return chatJson('Hello.');
+      }),
+    );
+    const deltas: string[] = [];
+    const text = await endpointTranslate(remote).translate(request, (d) => deltas.push(d));
+    expect(text).toBe('Hello.');
+    expect(deltas.join('')).toBe('Hello.');
+    expect(calls).toBe(2);
+  });
+
+  it('streams a summary and rejects an empty transcript without calling the server', async () => {
+    server.use(
+      http.post(`${BASE}/chat/completions`, () => chatStream(['## Overview\n', 'Kiro sponsors.'])),
+    );
+    const summary = endpointSummary(remote);
+    const base = { glossary: [], outputLang: 'en' as const };
+    let streamed = '';
+    const text = await summary.summarize(
+      {
+        ...base,
+        utterances: [{ seq: 0, sourceText: '키로가 후원합니다', translation: 'Kiro sponsors.' }],
+      },
+      (d) => (streamed += d),
+    );
+    expect(text).toBe('## Overview\nKiro sponsors.');
+    expect(streamed).toBe(text);
+
+    const err = (await summary
+      .summarize({ ...base, utterances: [{ seq: 0, sourceText: '  ' }] }, () => {})
+      .catch((e: unknown) => e)) as EngineError;
+    expect(err).toMatchObject({ kind: 'bad_request', message: 'The transcript is empty.' });
+  });
+
+  it('marks an unreachable endpoint as retryable network trouble', async () => {
+    server.use(http.post(`${BASE}/chat/completions`, () => HttpResponse.error()));
+    const err = (await endpointTranslate(remote)
+      .translate(request, () => {})
+      .catch((e: unknown) => e)) as EngineError;
+    expect(err).toMatchObject({ kind: 'network', retryable: true, engine: 'endpoint' });
   });
 });

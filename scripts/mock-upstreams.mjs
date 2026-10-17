@@ -9,6 +9,8 @@
 //                                      summary for summary prompts), preceded by an empty
 //                                      <think></think> block split across chunks, like Qwen3
 // Set MOCK_HEADER_NAME/MOCK_HEADER_VALUE to require the custom LLM auth header.
+// CORS is open (any origin, preflight answered), so the browser can call it directly as a
+// custom endpoint.
 // Set MOCK_LATENCY_MS to add delay (default 150).
 
 import http from 'node:http';
@@ -87,9 +89,26 @@ const server = http.createServer((req, res) => {
   });
 });
 
+/** Lets any page call the mock straight from the browser (custom endpoint mode). */
+function allowCors(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin ?? '*');
+  res.setHeader('Vary', 'Origin');
+  if (req.method !== 'OPTIONS') return false;
+  res.writeHead(204, {
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    // Echo what the browser asks for: Authorization, Content-Type, the custom header.
+    'Access-Control-Allow-Headers':
+      req.headers['access-control-request-headers'] ?? 'authorization, content-type',
+    'Access-Control-Max-Age': '600',
+  });
+  res.end();
+  return true;
+}
+
 async function handle(req, res) {
   const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
   console.log(`[mock] ${req.method} ${url.pathname}`);
+  if (allowCors(req, res)) return;
   await sleep(LATENCY);
 
   if (req.method === 'GET' && url.pathname === '/v1/models') {
