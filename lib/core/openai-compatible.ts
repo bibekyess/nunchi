@@ -2,7 +2,7 @@
 // fetch only, so it runs in the browser (custom endpoints) and on the server alike.
 import { encodeWav } from '@/lib/audio/wav';
 import { EngineError, type EngineErrorKind } from '@/lib/errors';
-import type { EngineId } from '@/lib/engines/types';
+import type { EngineId } from '@/lib/engines/ids';
 import { normalizeWhisperLanguage } from '@/lib/languages';
 import type { TranscriptionResult } from '@/lib/types';
 import { withIdleTimeout } from '@/lib/util/streams';

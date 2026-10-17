@@ -1,4 +1,4 @@
-import type { EngineChoice } from './engines/types';
+import type { EngineChoice } from './engines/ids';
 import type { Lang } from './languages';
 
 export type { Lang };

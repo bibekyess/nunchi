@@ -1,17 +1,11 @@
 // What the pipeline and summary need from whoever does the work: the app's own server
-// (`server`), an OpenAI-compatible URL the browser calls directly (`endpoint`, Phase 2) or
-// models running in the browser (`device`, Phase 3). The user picks one per task.
+// (`server`), an OpenAI-compatible URL the browser calls directly (`endpoint`) or models
+// running in the browser (`device`, Phase 3). The user picks one per task.
 import type { Lang } from '@/lib/languages';
 import type { GlossaryEntry, TranscriptionResult, TranslationContextItem } from '@/lib/types';
+import type { EngineId } from './ids';
 
-export const ENGINE_IDS = ['server', 'endpoint', 'device'] as const;
-export type EngineId = (typeof ENGINE_IDS)[number];
-
-export const ENGINE_TASKS = ['speech', 'translate', 'summary'] as const;
-export type EngineTask = (typeof ENGINE_TASKS)[number];
-
-/** Which engine does each task. */
-export type EngineChoice = Record<EngineTask, EngineId>;
+export { ENGINE_IDS, ENGINE_TASKS, type EngineChoice, type EngineId, type EngineTask } from './ids';
 
 /** Whether an engine can take work right now. */
 export type EngineStatus =

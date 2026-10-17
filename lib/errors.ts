@@ -1,6 +1,6 @@
 // Errors from any engine (server routes today; endpoints and on-device models later), in a
 // form the pipeline can act on without knowing the transport. Client- and server-safe.
-import type { EngineId } from './engines/types';
+import type { EngineId } from './engines/ids';
 
 /** Header carrying the shared passcode (APP_ACCESS_TOKEN) from the browser to /api/*. */
 export const ACCESS_TOKEN_HEADER = 'x-nunchi-token';
