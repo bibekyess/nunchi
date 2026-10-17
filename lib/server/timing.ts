@@ -2,7 +2,7 @@ import 'server-only';
 
 export type Outcome = 'ok' | 'error' | 'aborted';
 
-type Field = string | number | undefined;
+export type Field = string | number | undefined;
 
 /** Returns a function that reports the whole milliseconds elapsed since the call. */
 export function startTimer(): () => number {
