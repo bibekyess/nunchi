@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { useSyncExternalStore } from 'react';
 import { create } from 'zustand';
 import { ENGINE_IDS, ENGINE_TASKS, type EngineId, type EngineTask } from '@/lib/engines/types';
 import { readJson, writeJson } from '@/lib/storage';
@@ -44,6 +45,22 @@ export const useEngineSettings = create<EngineSettingsState>()((set) => ({
     set({ choice: clean });
   },
 }));
+
+const noSubscribe = () => () => {};
+
+/**
+ * The choice for rendering. Server rendering can't see localStorage, so the default is used
+ * until hydration has finished; the saved choice follows right after.
+ */
+export function useEngineChoice(): EngineChoice {
+  const hydrated = useSyncExternalStore(
+    noSubscribe,
+    () => true,
+    () => false,
+  );
+  const choice = useEngineSettings((s) => s.choice);
+  return hydrated ? choice : DEFAULT_ENGINE_CHOICE;
+}
 
 /** Non-React access for the pipeline. */
 export const getEngineChoice = () => useEngineSettings.getState().choice;

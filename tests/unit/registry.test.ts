@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { serverSpeech, serverSummary, serverTranslate } from '@/lib/engines/server';
-import { BUILT_ENGINES, buildEngines } from '@/lib/engines/registry';
+import { BUILT_ENGINES, buildEngines, needsNetwork } from '@/lib/engines/registry';
 import { EngineError } from '@/lib/errors';
 import { DEFAULT_ENGINE_CHOICE } from '@/lib/settings/engines';
 
@@ -32,5 +32,11 @@ describe('engine registry', () => {
         () => {},
       ),
     ).rejects.toThrow(/Custom processing isn't available yet/);
+  });
+
+  it('needs the network while any task uses the server', () => {
+    expect(needsNetwork(DEFAULT_ENGINE_CHOICE)).toBe(true);
+    expect(needsNetwork({ speech: 'device', translate: 'device', summary: 'server' })).toBe(true);
+    expect(needsNetwork({ speech: 'device', translate: 'device', summary: 'device' })).toBe(false);
   });
 });

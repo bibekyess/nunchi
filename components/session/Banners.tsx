@@ -2,7 +2,9 @@
 
 import { TriangleAlert, KeyRound, MonitorX, RotateCw, WifiOff, X } from 'lucide-react';
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { needsNetwork } from '@/lib/engines/registry';
 import { setAccessToken } from '@/lib/engines/server';
+import { useEngineSettings } from '@/lib/settings/engines';
 import { useSessionStore } from '@/lib/store/session-store';
 import { Button, cx, IconButton, Input } from '../ui';
 import { useController } from './controller-context';
@@ -80,6 +82,8 @@ export function Banners() {
     () => navigator.onLine,
     () => true,
   );
+  // On-device engines keep working offline; only warn when something waits for the network.
+  const usesNetwork = useEngineSettings((s) => needsNetwork(s.choice));
   const [token, setToken] = useState('');
 
   // The interruption notice clears itself after a while; listening already restarted.
@@ -91,7 +95,7 @@ export function Banners() {
 
   return (
     <>
-      {!online && (
+      {!online && usesNetwork && (
         <Banner tone="warn" icon={<WifiOff />}>
           <span>Offline. Speech is kept and sent when the connection returns.</span>
         </Banner>

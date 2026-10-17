@@ -1,14 +1,15 @@
 import { getEngineChoice, type EngineChoice } from '@/lib/settings/engines';
 import { EngineError } from '@/lib/errors';
 import { serverSpeech, serverSummary, serverTranslate } from './server';
-import type {
-  EngineId,
-  EngineStatus,
-  Engines,
-  EngineTask,
-  SpeechEngine,
-  SummaryEngine,
-  TranslateEngine,
+import {
+  ENGINE_TASKS,
+  type EngineId,
+  type EngineStatus,
+  type Engines,
+  type EngineTask,
+  type SpeechEngine,
+  type SummaryEngine,
+  type TranslateEngine,
 } from './types';
 
 export const ENGINE_LABELS: Record<EngineId, string> = {
@@ -78,4 +79,10 @@ export function getEngines(): Engines {
 /** The engine for one task, as currently chosen. */
 export function getEngine<T extends EngineTask>(task: T): Engines[T] {
   return getEngines()[task];
+}
+
+/** Whether any chosen engine needs the network (drives the offline notice). */
+export function needsNetwork(choice: EngineChoice): boolean {
+  const engines = buildEngines(choice);
+  return ENGINE_TASKS.some((task) => engines[task].needsNetwork);
 }
