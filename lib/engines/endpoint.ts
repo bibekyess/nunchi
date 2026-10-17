@@ -1,7 +1,11 @@
 // The `endpoint` engine: an OpenAI-compatible server the user entered (Speaches, Ollama,
 // LM Studio, vLLM, …), called straight from the browser. URLs and keys never go to the
 // app's own /api/*; the shared pipeline logic in lib/core runs here instead of on the server.
-import { createOpenAICompatible, VLLM_NO_THINKING } from '@/lib/core/openai-compatible';
+import {
+  createOpenAICompatible,
+  VLLM_NO_THINKING,
+  type OpenAICompatibleClient,
+} from '@/lib/core/openai-compatible';
 import { startSummary, summaryLines } from '@/lib/core/summarize';
 import { transcribeWithFallback } from '@/lib/core/transcribe';
 import { runTranslation } from '@/lib/core/translate';
@@ -32,7 +36,15 @@ const TASK_NAMES: Record<EngineTask, string> = {
   summary: 'summary',
 };
 
-function client(config: EndpointConfig, chat: boolean) {
+/**
+ * The client for one endpoint config: its key, optional header and (for chat) vLLM's
+ * no-thinking flag. Used by the engines and by Test connection alike.
+ */
+export function endpointClient(
+  config: EndpointConfig,
+  kind: 'speech' | 'chat',
+  fetch?: typeof globalThis.fetch,
+): OpenAICompatibleClient {
   return createOpenAICompatible({
     baseUrl: config.baseUrl,
     model: config.model,
@@ -41,8 +53,9 @@ function client(config: EndpointConfig, chat: boolean) {
       config.headerName && config.headerValue
         ? { [config.headerName]: config.headerValue }
         : undefined,
-    extraBody: chat && config.disableThinking ? VLLM_NO_THINKING : undefined,
+    extraBody: kind === 'chat' && config.disableThinking ? VLLM_NO_THINKING : undefined,
     engine: 'endpoint',
+    fetch,
   });
 }
 
@@ -75,12 +88,12 @@ async function withHints<T>(work: () => Promise<T>): Promise<T> {
 
 async function status(
   config: EndpointConfig,
-  chat: boolean,
+  kind: 'speech' | 'chat',
   signal?: AbortSignal,
 ): Promise<EngineStatus> {
   if (endpointProblem(config)) return { state: 'not_configured' };
   try {
-    await client(config, chat).listModels({ signal });
+    await endpointClient(config, kind).listModels({ signal });
     return { state: 'ready' };
   } catch (err) {
     if (err instanceof EngineError && err.kind === 'auth') {
@@ -97,11 +110,15 @@ export function endpointSpeech(config: EndpointConfig): SpeechEngine {
   return {
     id: 'endpoint',
     needsNetwork: !isLoopback(config.baseUrl),
-    status: (signal) => status(config, false, signal),
+    status: (signal) => status(config, 'speech', signal),
     transcribe: (audio, opts) =>
       withHints(async () => {
         requireComplete(config, 'speech');
-        const { result } = await transcribeWithFallback(client(config, false).speech, audio, opts);
+        const { result } = await transcribeWithFallback(
+          endpointClient(config, 'speech').speech,
+          audio,
+          opts,
+        );
         return result;
       }),
   };
@@ -111,11 +128,11 @@ export function endpointTranslate(config: EndpointConfig): TranslateEngine {
   return {
     id: 'endpoint',
     needsNetwork: !isLoopback(config.baseUrl),
-    status: (signal) => status(config, true, signal),
+    status: (signal) => status(config, 'chat', signal),
     translate: (request, onDelta, signal) =>
       withHints(async () => {
         requireComplete(config, 'translate');
-        return runTranslation(client(config, true).chat, request, onDelta, signal);
+        return runTranslation(endpointClient(config, 'chat').chat, request, onDelta, signal);
       }),
   };
 }
@@ -124,7 +141,7 @@ export function endpointSummary(config: EndpointConfig): SummaryEngine {
   return {
     id: 'endpoint',
     needsNetwork: !isLoopback(config.baseUrl),
-    status: (signal) => status(config, true, signal),
+    status: (signal) => status(config, 'chat', signal),
     summarize: (request, onDelta, signal) =>
       withHints(async () => {
         requireComplete(config, 'summary');
@@ -132,7 +149,9 @@ export function endpointSummary(config: EndpointConfig): SummaryEngine {
         if (lines.length === 0) {
           throw new EngineError('bad_request', 'The transcript is empty.', { engine: 'endpoint' });
         }
-        const run = await startSummary(client(config, true).chat, request, lines, { signal });
+        const run = await startSummary(endpointClient(config, 'chat').chat, request, lines, {
+          signal,
+        });
         let full = '';
         for await (const piece of run.text) {
           full += piece;

@@ -1,9 +1,9 @@
 // "Test connection" for a custom endpoint: tells a wrong URL, a CORS block, a refused key and
 // a missing model apart, in words someone setting up a local server can act on.
-import { createOpenAICompatible, VLLM_NO_THINKING } from '@/lib/core/openai-compatible';
+import { hostOf } from '@/lib/core/openai-compatible';
 import { EngineError } from '@/lib/errors';
 import type { EndpointConfig } from '@/lib/settings/engines';
-import { isLoopback } from './endpoint';
+import { endpointClient, isLoopback } from './endpoint';
 
 export type EndpointCheck =
   | { ok: true; message: string; models: string[]; warning?: string }
@@ -23,14 +23,6 @@ const PROBE_TIMEOUT_MS = 5_000;
 
 export const CORS_HINT =
   "Allow this site on the server: Ollama — set OLLAMA_ORIGINS to this site's address and restart it; LM Studio — turn on CORS in its server settings; vLLM — start it with --allowed-origins; anything else — check its CORS setting.";
-
-function hostOf(url: string) {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
-}
 
 /**
  * Whether anything answers at `url` at all. A `no-cors` request succeeds (with an unreadable
@@ -115,18 +107,7 @@ export async function checkEndpoint(
     };
   }
 
-  const client = createOpenAICompatible({
-    baseUrl: config.baseUrl,
-    model: config.model,
-    apiKey: config.apiKey || undefined,
-    headers:
-      config.headerName && config.headerValue
-        ? { [config.headerName]: config.headerValue }
-        : undefined,
-    extraBody: kind === 'chat' && config.disableThinking ? VLLM_NO_THINKING : undefined,
-    engine: 'endpoint',
-    fetch: doFetch,
-  });
+  const client = endpointClient(config, kind, doFetch);
 
   let models: string[];
   try {

@@ -2,6 +2,7 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
+  endpointClient,
   endpointSpeech,
   endpointSummary,
   endpointTranslate,
@@ -22,6 +23,25 @@ const request: TranslateRequest = {
   context: [],
   glossary: [],
 };
+
+describe('endpointClient', () => {
+  it('sends the key and custom header, and the no-thinking flag only for chat', () => {
+    const config = {
+      ...EMPTY_ENDPOINT,
+      baseUrl: 'http://localhost:8000/v1',
+      model: 'm',
+      apiKey: 'k',
+      headerName: 'x-gw',
+      headerValue: 'v',
+      disableThinking: true,
+    };
+    const chat = endpointClient(config, 'chat').config;
+    expect(chat).toMatchObject({ apiKey: 'k', headers: { 'x-gw': 'v' }, engine: 'endpoint' });
+    expect(chat.extraBody).toEqual({ chat_template_kwargs: { enable_thinking: false } });
+    expect(endpointClient(config, 'speech').config.extraBody).toBeUndefined();
+    expect(endpointClient({ ...config, apiKey: '' }, 'chat').config.apiKey).toBeUndefined();
+  });
+});
 
 describe('endpoint engines', () => {
   it('treats only loopback hosts as local', () => {
