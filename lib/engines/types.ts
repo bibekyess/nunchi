@@ -18,7 +18,7 @@ export type EngineStatus =
   /** It can't run here (not built yet, unsupported device). */
   | { state: 'unavailable'; reason: string }
   /** It should work but doesn't (server down, passcode needed). */
-  | { state: 'error'; reason: string };
+  | { state: 'error'; reason: string; needsPasscode?: boolean };
 
 interface EngineBase {
   readonly id: EngineId;

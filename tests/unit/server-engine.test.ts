@@ -41,7 +41,11 @@ describe('server engines', () => {
       'fetch',
       vi.fn(async () => json({ error: { code: 'unauthorized', message: 'no' } }, 401)),
     );
-    expect(await serverSpeech.status()).toEqual({ state: 'error', reason: 'Passcode required.' });
+    expect(await serverSpeech.status()).toEqual({
+      state: 'error',
+      reason: 'Passcode required.',
+      needsPasscode: true,
+    });
   });
 
   it('does not reuse a failed check', async () => {

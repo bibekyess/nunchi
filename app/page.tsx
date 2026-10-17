@@ -4,6 +4,7 @@ import { RecentSessions } from '@/components/home/RecentSessions';
 import { LangFlag } from '@/components/LangFlag';
 import { Logo } from '@/components/Logo';
 import { NewSessionButton } from '@/components/NewSessionButton';
+import { ProcessingButton } from '@/components/home/ProcessingButton';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 /** Entrance stagger: each block slides in a beat after the one above. */
@@ -17,6 +18,7 @@ export default function Home() {
           <Logo variant="horizontal" className="h-7" />
         </span>
         <HealthDot />
+        <ProcessingButton />
         <ThemeToggle />
       </header>
 

@@ -12,6 +12,9 @@ export type SegmentOption<T extends string> = {
   /** Element id and aria-controls, for tabs that own a panel. */
   id?: string;
   controls?: string;
+  /** Shown but not selectable; `hint` says why (tooltip and accessible name). */
+  disabled?: boolean;
+  hint?: string;
 };
 
 /**
@@ -72,30 +75,37 @@ export function SegmentedControl<T extends string>({
   }, [value, options]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const i = options.findIndex((o) => o.value === value);
-    const last = options.length - 1;
-    const next =
+    const step =
       e.key === 'ArrowRight' || e.key === 'ArrowDown'
-        ? i === last
-          ? 0
-          : i + 1
+        ? 1
         : e.key === 'ArrowLeft' || e.key === 'ArrowUp'
-          ? i === 0
-            ? last
-            : i - 1
-          : e.key === 'Home'
-            ? 0
-            : e.key === 'End'
-              ? last
-              : -1;
-    if (next < 0) return;
+          ? -1
+          : 0;
+    const enabled = options.filter((o) => !o.disabled);
+    if (enabled.length === 0) return;
+    let target: SegmentOption<T> | undefined;
+    if (e.key === 'Home') target = enabled[0];
+    else if (e.key === 'End') target = enabled[enabled.length - 1];
+    else if (step !== 0) {
+      // Move to the next selectable option, wrapping around and skipping disabled ones.
+      const n = options.length;
+      const from = options.findIndex((o) => o.value === value);
+      for (let k = 1; k <= n && !target; k++) {
+        const o = options[(((from + step * k) % n) + n) % n];
+        if (!o.disabled) target = o;
+      }
+    }
+    if (!target) return;
     e.preventDefault();
-    const v = options[next].value;
-    onChange(v);
-    buttons.current.get(v)?.focus();
+    onChange(target.value);
+    buttons.current.get(target.value)?.focus();
   };
 
   const isTabs = role === 'tablist';
+  // The Tab key lands on the selected option, or the first selectable one if that is disabled.
+  const tabStop =
+    options.find((o) => o.value === value && !o.disabled)?.value ??
+    options.find((o) => !o.disabled)?.value;
   return (
     <div
       ref={track}
@@ -134,9 +144,12 @@ export function SegmentedControl<T extends string>({
             aria-controls={o.controls}
             aria-selected={isTabs ? selected : undefined}
             aria-checked={isTabs ? undefined : selected}
-            aria-label={o.iconOnly ? o.label : undefined}
-            title={o.iconOnly ? o.label : undefined}
-            tabIndex={selected ? 0 : -1}
+            aria-label={
+              o.disabled && o.hint ? `${o.label} (${o.hint})` : o.iconOnly ? o.label : undefined
+            }
+            title={o.disabled && o.hint ? o.hint : o.iconOnly ? o.label : undefined}
+            disabled={o.disabled}
+            tabIndex={o.value === tabStop ? 0 : -1}
             onClick={() => onChange(o.value)}
             className={cx(
               'relative inline-flex items-center justify-center gap-1.5 rounded-full font-medium whitespace-nowrap transition-colors duration-200 ease-out select-none',
@@ -149,7 +162,9 @@ export function SegmentedControl<T extends string>({
                   : tone === 'accent'
                     ? 'text-accent-ink'
                     : 'text-ink'
-                : 'text-ink-muted hover:text-ink',
+                : o.disabled
+                  ? 'cursor-not-allowed text-ink-faint'
+                  : 'text-ink-muted hover:text-ink',
             )}
           >
             {o.icon}

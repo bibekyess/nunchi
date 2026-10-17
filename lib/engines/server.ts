@@ -186,7 +186,7 @@ async function serviceStatus(service: keyof HealthStatus): Promise<EngineStatus>
     return { state: 'error', reason: 'The server is not answering.' };
   } catch (err) {
     if (err instanceof EngineError && err.kind === 'auth') {
-      return { state: 'error', reason: 'Passcode required.' };
+      return { state: 'error', reason: 'Passcode required.', needsPasscode: true };
     }
     return { state: 'error', reason: 'Could not reach the app server.' };
   }
