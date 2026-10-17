@@ -2,6 +2,59 @@
 
 Changes to, or details not covered by, the implementation plan. Newest first.
 
+## 2026-10-17 — Engines Phase 2
+
+**Custom** endpoints work: each task can run on an OpenAI-compatible server that the browser
+calls directly. Server mode is unchanged: `pnpm smoke` against `pnpm mock`, a set of route
+probes and the server's log lines (timings aside) match Phase 1.
+
+- **One shared client** (`lib/core/openai-compatible.ts`): fetch only, so the browser and the
+  server use the same code. `ChatModel` (streamed and plain `/chat/completions`), `SpeechModel`
+  (`/audio/transcriptions`, `verbose_json`) and `listModels()`. A small SSE parser handles
+  events split across chunks, CRLF/CR, comments and `[DONE]`; an `error` event mid-stream fails
+  the stream. The timeout covers the wait for the response to start, as the OpenAI SDK did.
+  Failures are `EndpointError` (an `EngineError`): `network` (fetch rejected without a status:
+  DNS, refused, CORS and mixed content look the same to a page), `auth` (401/403), `timeout`,
+  `upstream` (429, 5xx, a broken stream, non-JSON) or `bad_request`. The message is safe to
+  show; the server's response body is kept apart as `detail` for logs.
+- **The server's LLM uses it too; the `openai` package is gone.** Same behavior: vLLM's
+  `chat_template_kwargs`, the custom header, `Bearer LLM_API_KEY` (or `none`), 60 s (180 s for
+  summaries), no automatic retries, abort on disconnect, `pingLlm` via `GET /models`.
+  `toUpstreamError` logs `detail`, so upstream bodies still reach the server log and never the
+  client. The Speaches client reuses the shared transcription parser.
+- **Settings** (`nunchi.engines`) become `{ choice, endpoints }`: one speech endpoint plus
+  translation and summary configs (URL, model, API key, optional header, disable-thinking).
+  The summary uses the translation endpoint unless "Same as translation" is off. The Phase 1
+  flat choice loads as `choice`. Only http(s) URLs are kept (trailing slashes dropped); a
+  header name must be a valid token, and line breaks are stripped from secrets. Keys stay in
+  this browser's localStorage, next to the other per-device settings, with a note in the
+  dialog saying so.
+- **Endpoint engines** (`lib/engines/endpoint.ts`) run the same `lib/core` logic as the server
+  routes (Korean fallback for unsupported detected languages, empty-answer retry, chunked
+  summaries), WAV-encoding clips themselves. They never call `/api/*`. `needsNetwork` is false
+  only for `localhost`, `127.0.0.1` and `[::1]`, so local servers keep working offline. An
+  unfilled endpoint fails without retrying; a refused key says to check Processing settings and
+  never opens the app passcode banner. Status is `GET /models` (5 s).
+- **Processing dialog:** Custom opens a form per task: quick-fill presets (Speaches, Ollama,
+  LM Studio), URL, model (suggestions from `/models`), API key (`type="password"`), and under
+  More options a custom header and vLLM's disable-thinking switch. While translation is Custom,
+  the summary offers "Same as translation" (on by default); otherwise the summary's form edits
+  the endpoint it will use. Save is blocked, with the reason, while a chosen endpoint has no
+  valid URL or model. Status badges follow the draft after typing pauses (0.7 s).
+- **Test connection** (`lib/engines/endpoint-check.ts`): `/models`, then for chat a 1-token
+  answer (60 s, as a local model may need to load). A failed request is told apart with a
+  `no-cors` probe: if that gets through, the server is up and CORS blocked it (hints for
+  Ollama, LM Studio, vLLM); if not, it's unreachable. Also: refused key, a URL without
+  `/models` ("usually ends in /v1"), missing model. Plain `http://` to another machine from an
+  `https://` page is flagged as mixed content without trying.
+- **Retries after switching engines** use whatever is chosen at retry time; "Retry all failed"
+  is the way to re-run failed lines on a new engine.
+- **The hallucination filter** keeps transcripts from servers without segment scores (plain
+  `json`, or missing `no_speech_prob` / `avg_logprob`); the text checks still apply.
+- **Tests:** the mock upstreams answer CORS preflights. A new e2e runs against a second app
+  server with no upstreams: all three tasks on Custom (the mock, with its auth header; a wrong
+  header is reported as a refused key), then a session and a summary with no `/api/*` call.
+
 ## 2026-10-17 — Engines Phase 1
 
 Each task (speech to text, translation, summary) now runs on an engine chosen per device. Only

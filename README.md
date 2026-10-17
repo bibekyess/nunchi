@@ -33,10 +33,12 @@ The implementation plan lives in the shared plan doc; decisions made while build
   with the session. Search, Markdown export, Copy all and the installable PWA were left out
   on purpose: the goal is following Korean meetings, not archiving or sharing them.
 - **Phases 4–5 (speaker labels, share links, server storage): not planned for now.**
-- **Engines (see [`docs/ENGINES-PLAN.md`](docs/ENGINES-PLAN.md)): Phases 0–1 done.** A
+- **Engines (see [`docs/ENGINES-PLAN.md`](docs/ENGINES-PLAN.md)): Phases 0–2 done.** A
   **Processing** dialog (home header and the session ⋯ menu) picks where speech to text,
-  translation and summary run. Only Server works today; Custom endpoint and This device are
-  listed as coming soon.
+  translation and summary run: **Server** (this app's upstreams) or **Custom** (your own
+  OpenAI-compatible server, called straight from the browser; see
+  [Use your own server](#use-your-own-server-custom-endpoint)). This device (on-device models)
+  is listed as coming soon.
 
 ## Setup
 
@@ -72,7 +74,7 @@ pnpm smoke           # terminal 3
 
 The browser tests (`pnpm e2e`) start the mock and the built app themselves (set
 `E2E_MOCK_PORT` if 8788 is taken). They cover the live session, the view filter, text size,
-side-by-side layout, reload recovery, the summary tab, the recent-sessions list, and tab-audio capture (Chromium's fake capture UI auto-accepts the share). It uses Playwright's
+side-by-side layout, reload recovery, the summary tab, the recent-sessions list, the Processing dialog, a full session in Custom mode against a second app server with no upstreams, and tab-audio capture (Chromium's fake capture UI auto-accepts the share). It uses Playwright's
 Chromium, or the one at `PLAYWRIGHT_CHROMIUM_PATH` if set. The speech fixture is the public-domain
 JFK sample from whisper.cpp.
 
@@ -100,6 +102,50 @@ The app listens on `127.0.0.1:9083` (set `PORT` to change the host port). Put an
 proxy such as nginx in front: browsers only allow the microphone over HTTPS (or on `localhost`).
 The env file is read at container start, never baked into the image. After editing it, run
 `docker compose up -d` again to recreate the container.
+
+## Use your own server (Custom endpoint)
+
+In **Processing**, set any task to **Custom** and point it at an OpenAI-compatible server.
+The browser calls that server directly: its URL and API key are stored in this browser only and
+never pass through the nunchi server. The app server's own upstreams can even be left empty
+(`SPEACHES_BASE_URL`, `LLM_BASE_URL`), and a custom endpoint on `localhost` keeps working
+offline.
+
+Speech to text needs `/v1/audio/transcriptions` (Whisper-style); translation and summary need
+`/v1/chat/completions`. The summary uses the translation server unless you switch off "Same as
+translation". Use **Test connection** after filling in a task: it tells a wrong URL, a CORS
+block, a refused key and a missing model apart.
+
+Example: everything on your laptop.
+
+```bash
+# Translation and summary: Ollama (http://localhost:11434/v1)
+ollama pull qwen3:4b
+ollama serve
+
+# Speech to text: Speaches (http://localhost:8000/v1). Use the latest-cuda tag with an NVIDIA GPU.
+docker run --rm -p 8000:8000 ghcr.io/speaches-ai/speaches:latest-cpu
+```
+
+Then in Processing pick the Ollama and Speaches presets and enter the models (e.g.
+`qwen3:4b`, and a Whisper model your Speaches has, such as `Systran/faster-whisper-large-v3`;
+see the Speaches docs for downloading models). LM Studio works the same way on
+`http://localhost:1234/v1`. For vLLM with Qwen3, turn on "Disable thinking" under More options.
+
+**CORS.** The server must allow requests from the page's address, or the browser blocks the
+response:
+
+- Ollama already allows pages on `localhost`. If nunchi runs on another address (e.g. your
+  HTTPS domain), start Ollama with that address in `OLLAMA_ORIGINS`, e.g.
+  `OLLAMA_ORIGINS=https://nunchi.example.com ollama serve`.
+- LM Studio: turn on CORS in its server settings.
+- vLLM: `--allowed-origins` (with `--allowed-headers` if you send a custom header).
+- Speaches and anything else: check its CORS setting.
+
+**HTTPS and localhost.** A page served over `https://` can't call plain `http://` on another
+machine (mixed content): give that server HTTPS too. `http://localhost` is the exception in
+Chrome and Edge, which may first ask to allow access to devices on your local network. If your
+browser still blocks it, open nunchi itself on `http://localhost`.
 
 ## API
 

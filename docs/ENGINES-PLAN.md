@@ -1,6 +1,6 @@
 # Engines plan: Server, Custom endpoint and On-device processing
 
-Status: approved 2026-10-17. Phases 0 and 1 done (see `docs/DECISIONS.md`).
+Status: approved 2026-10-17. Phases 0, 1 and 2 done (see `docs/DECISIONS.md`).
 
 ## Why
 
