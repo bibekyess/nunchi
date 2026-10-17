@@ -103,6 +103,11 @@ proxy such as nginx in front: browsers only allow the microphone over HTTPS (or 
 The env file is read at container start, never baked into the image. After editing it, run
 `docker compose up -d` again to recreate the container.
 
+The configuration is checked once when the server starts (`instrumentation.ts`): an invalid
+value stops it with an "Invalid server environment" message listing the problems, instead of
+failing every request later. In production, a missing `APP_ACCESS_TOKEN` logs a warning,
+since anyone who finds the URL could then use your GPU servers.
+
 ## Use your own server (Custom endpoint)
 
 In **Processing**, set any task to **Custom** and point it at an OpenAI-compatible server.
@@ -157,12 +162,17 @@ Each upstream is optional. Leave `SPEACHES_BASE_URL` empty (or both `LLM_BASE_UR
 Processing settings then show Server as not available for that task.
 
 - `GET /api/health` → `{ speaches, llm }`, each `'ok' | 'error' | 'not_configured'`
-- `POST /api/transcribe` (multipart: `audio` WAV ≤ 2 MB, `language` `ko|en|auto`, `prompt` ≤ 200
+- `POST /api/transcribe` (multipart: `audio` ≤ 2 MB, `language` `ko|en|auto`, `prompt` ≤ 200
   chars) → `{ text, language, durationMs, segments: [{ text, noSpeechProb, avgLogprob }] }`.
-  In auto mode, a detected language outside Korean/English triggers one re-transcription as Korean.
+  The audio must be a 16 kHz mono 16-bit PCM WAV (what the app records); anything else is
+  rejected with `400`. In auto mode, a detected language outside Korean/English triggers one
+  re-transcription as Korean.
 - `POST /api/translate` (JSON: `text, sourceLang, targetLang, context[≤5], glossary, meetingContext?`)
   → streamed `text/plain`. Qwen thinking is disabled via `chat_template_kwargs`, and any
   `<think>` block is stripped anyway. An empty result is retried once at temperature 0.
 - `POST /api/summarize` (JSON: `utterances[{ seq, sourceText, translation? }]` ≤ 5000,
   `glossary, meetingContext?, outputLang`) → streamed markdown. Transcripts over ~24k
   characters are summarized in parts (two at a time) and the parts merged into one summary.
+  Transcripts over 300,000 characters (well past a two-hour meeting) are rejected with `413`.
+
+Request bodies are size-checked before they are read: oversized requests get `413`.
