@@ -39,8 +39,7 @@ export class SessionController {
   constructor() {
     this.queue = new PipelineQueue({
       getState: sessionStore.getState,
-      encode: (audio) => encodeWav(audio),
-      transcribe: transcribeClip,
+      transcribe: (audio, opts) => transcribeClip(encodeWav(audio), opts),
       translate: translateStream,
       newId: () => crypto.randomUUID(),
       sleep: (ms) => new Promise((r) => setTimeout(r, ms)),

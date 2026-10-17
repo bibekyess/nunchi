@@ -15,9 +15,9 @@ export const MAX_PENDING_CLIPS = 50; // ~15 MB of audio
 
 export interface QueueDeps {
   getState: () => SessionState;
-  encode: (audio: Float32Array) => Blob;
+  /** Transcribes one clip of 16 kHz mono samples; engines encode it as they need. */
   transcribe: (
-    audio: Blob,
+    audio: Float32Array,
     opts: { language: Lang | 'auto'; prompt?: string; signal?: AbortSignal },
   ) => Promise<TranscriptionResult>;
   translate: (
@@ -173,10 +173,9 @@ export class PipelineQueue {
     const { mode, glossary } = state.session;
     let result: TranscriptionResult;
     try {
-      const audio = this.deps.encode(clip.audio);
       result = await this.transcribeSlots.run(() =>
         this.withRetries(() =>
-          this.deps.transcribe(audio, {
+          this.deps.transcribe(clip.audio, {
             language: mode.source,
             prompt: buildWhisperPrompt(glossary, this.previousSource(u.seq)),
             signal: this.signal,

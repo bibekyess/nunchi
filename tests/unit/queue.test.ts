@@ -30,7 +30,6 @@ let n = 0;
 function makeDeps(over: Partial<QueueDeps> = {}): QueueDeps {
   return {
     getState: sessionStore.getState,
-    encode: () => new Blob(['wav']),
     transcribe: vi.fn(async () => tr('안녕하세요.')),
     translate: vi.fn(async (_body: TranslateRequest, onDelta: (d: string) => void) => {
       onDelta('Hello.');
@@ -54,8 +53,10 @@ beforeEach(() => {
 
 describe('PipelineQueue', () => {
   it('adds a placeholder immediately, then fills in source and translation', async () => {
-    const q = new PipelineQueue(makeDeps());
-    const id = q.enqueue(clip());
+    const deps = makeDeps();
+    const q = new PipelineQueue(deps);
+    const c = clip();
+    const id = q.enqueue(c);
     expect(state().byId[id]).toMatchObject({ seq: 0, status: 'transcribing', durationMs: 1500 });
 
     await flush();
@@ -67,6 +68,11 @@ describe('PipelineQueue', () => {
       translation: 'Hello.',
     });
     expect(q.pendingClips).toBe(0); // audio discarded after transcription
+    // Engines get the raw samples and encode them as they need.
+    expect(deps.transcribe).toHaveBeenCalledWith(
+      c.audio,
+      expect.objectContaining({ language: 'auto' }),
+    );
   });
 
   it('keeps speech order when responses arrive out of order', async () => {
