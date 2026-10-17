@@ -30,6 +30,62 @@ export function encodeWav(samples: Float32Array, sampleRate = SAMPLE_RATE): Blob
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
+/** An upload that isn't the 16 kHz mono 16-bit PCM WAV the app records. */
+export class WavError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WavError';
+  }
+}
+
+/**
+ * The middle of the range `encodeWav` truncates to `v`. Plain `v / 32767` doesn't survive
+ * float32 storage: about half the values would come back one step lower when re-encoded.
+ */
+function fromInt16(v: number): number {
+  if (v === 0) return 0;
+  return v < 0 ? (v - 0.5) / 0x8000 : (v + 0.5) / 0x7fff;
+}
+
+/**
+ * Decodes a 16-bit PCM mono WAV at `sampleRate` (what `encodeWav` writes) to Float32 samples.
+ * Walks the chunks, so extra ones (e.g. LIST) are fine. Anything else throws a `WavError`.
+ * Exact inverse of `encodeWav`: encoding the result gives back the same bytes.
+ */
+export function decodeWav(buffer: ArrayBuffer, sampleRate = SAMPLE_RATE): Float32Array {
+  const view = new DataView(buffer);
+  const ascii = (offset: number) => String.fromCharCode(...new Uint8Array(buffer, offset, 4));
+  if (buffer.byteLength < 12 || ascii(0) !== 'RIFF' || ascii(8) !== 'WAVE') {
+    throw new WavError('Not a WAV file.');
+  }
+  let format = false;
+  for (let offset = 12; offset + 8 <= buffer.byteLength;) {
+    const id = ascii(offset);
+    const size = view.getUint32(offset + 4, true);
+    const body = offset + 8;
+    if (id === 'fmt ') {
+      if (size < 16 || body + 16 > buffer.byteLength) throw new WavError('Broken WAV header.');
+      const pcm = view.getUint16(body, true) === 1;
+      const channels = view.getUint16(body + 2, true);
+      const rate = view.getUint32(body + 4, true);
+      const bits = view.getUint16(body + 14, true);
+      if (!pcm || channels !== 1 || rate !== sampleRate || bits !== 16) {
+        throw new WavError(`Expected 16-bit PCM mono audio at ${sampleRate} Hz.`);
+      }
+      format = true;
+    } else if (id === 'data') {
+      if (!format) throw new WavError('Broken WAV header.');
+      // Some writers leave the size unset; read what is there.
+      const count = Math.floor(Math.min(size, buffer.byteLength - body) / 2);
+      const samples = new Float32Array(count);
+      for (let i = 0; i < count; i++) samples[i] = fromInt16(view.getInt16(body + i * 2, true));
+      return samples;
+    }
+    offset = body + size + (size % 2); // chunks are padded to even sizes
+  }
+  throw new WavError('The WAV file has no audio data.');
+}
+
 export function samplesToMs(samples: number, sampleRate = SAMPLE_RATE): number {
   return Math.round((samples / sampleRate) * 1000);
 }

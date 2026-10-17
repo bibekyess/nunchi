@@ -26,18 +26,18 @@ export interface TranscribeOutcome {
  */
 export async function transcribeWithFallback(
   speech: SpeechModel,
-  wav: Blob,
+  audio: Float32Array,
   { language, prompt, signal }: TranscribeRequest,
 ): Promise<TranscribeOutcome> {
   const forced = language === 'auto' ? undefined : language;
   let t0 = performance.now();
-  let result = await speech.transcribe(wav, { language: forced, prompt, signal });
+  let result = await speech.transcribe(audio, { language: forced, prompt, signal });
   const firstMs = Math.round(performance.now() - t0);
   let fallbackMs: number | undefined;
 
   if (!forced && result.text !== '' && !isLang(result.language)) {
     t0 = performance.now();
-    result = await speech.transcribe(wav, { language: FALLBACK_LANG, prompt, signal });
+    result = await speech.transcribe(audio, { language: FALLBACK_LANG, prompt, signal });
     fallbackMs = Math.round(performance.now() - t0);
     result.language ??= FALLBACK_LANG;
   }

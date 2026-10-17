@@ -37,6 +37,9 @@ export interface SpeechOptions {
 }
 
 export interface SpeechModel {
-  /** Transcribes one 16 kHz mono WAV clip. */
-  transcribe(wav: Blob, opts?: SpeechOptions): Promise<TranscriptionResult>;
+  /**
+   * Transcribes one clip of 16 kHz mono samples (-1..1). Models behind HTTP encode a WAV;
+   * on-device ones take the samples as they are.
+   */
+  transcribe(audio: Float32Array, opts?: SpeechOptions): Promise<TranscriptionResult>;
 }

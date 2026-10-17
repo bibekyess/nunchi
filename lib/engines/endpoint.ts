@@ -1,7 +1,6 @@
 // The `endpoint` engine: an OpenAI-compatible server the user entered (Speaches, Ollama,
 // LM Studio, vLLM, …), called straight from the browser. URLs and keys never go to the
 // app's own /api/*; the shared pipeline logic in lib/core runs here instead of on the server.
-import { encodeWav } from '@/lib/audio/wav';
 import { createOpenAICompatible, VLLM_NO_THINKING } from '@/lib/core/openai-compatible';
 import { startSummary, summaryLines } from '@/lib/core/summarize';
 import { transcribeWithFallback } from '@/lib/core/transcribe';
@@ -102,11 +101,7 @@ export function endpointSpeech(config: EndpointConfig): SpeechEngine {
     transcribe: (audio, opts) =>
       withHints(async () => {
         requireComplete(config, 'speech');
-        const { result } = await transcribeWithFallback(
-          client(config, false).speech,
-          encodeWav(audio),
-          opts,
-        );
+        const { result } = await transcribeWithFallback(client(config, false).speech, audio, opts);
         return result;
       }),
   };

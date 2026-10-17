@@ -3,6 +3,7 @@ import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { POST } from '@/app/api/transcribe/route';
 import { resetEnvCache } from '@/lib/server/env';
+import { readFileSync } from 'node:fs';
 import { SPEACHES, TEST_ENV, wavBlob } from './helpers';
 
 const server = setupServer();
@@ -54,6 +55,27 @@ describe('POST /api/transcribe', () => {
     expect(sent?.get('temperature')).toBe('0');
     expect(sent?.get('response_format')).toBe('verbose_json');
     expect(sent?.get('file')).toBeInstanceOf(Blob);
+  });
+
+  it('sends Speaches the recorded clip byte for byte', async () => {
+    let file: Blob | undefined;
+    server.use(
+      http.post(`${SPEACHES}/audio/transcriptions`, async ({ request }) => {
+        file = (await request.formData()).get('file') as Blob;
+        return HttpResponse.json(verbose('안녕하세요.', 'ko'));
+      }),
+    );
+    const fixture = readFileSync('tests/fixtures/ko-sample.wav');
+    const res = await POST(request({ audio: new Blob([fixture], { type: 'audio/wav' }) }));
+    expect(res.status).toBe(200);
+    expect(Buffer.from(await file!.arrayBuffer()).equals(fixture)).toBe(true);
+  });
+
+  it('rejects uploads that are not 16 kHz mono 16-bit WAV', async () => {
+    const notWav = new Blob([new Uint8Array(3200)], { type: 'audio/wav' });
+    const res = await POST(request({ audio: notWav }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toBe('Not a WAV file.');
   });
 
   it('passes a forced language through', async () => {

@@ -147,7 +147,7 @@ describe('transcribeWithFallback', () => {
     durationMs: 800,
     segments: [],
   });
-  const wav = new Blob(['wav']);
+  const wav = new Float32Array(1600);
 
   function fakeSpeech(...results: TranscriptionResult[]) {
     const transcribe = vi.fn<SpeechModel['transcribe']>();

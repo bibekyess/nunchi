@@ -1,5 +1,6 @@
 // A small client for any OpenAI-compatible server (vLLM, Ollama, LM Studio, Speaches, …).
 // fetch only, so it runs in the browser (custom endpoints) and on the server alike.
+import { encodeWav } from '@/lib/audio/wav';
 import { EngineError, type EngineErrorKind } from '@/lib/errors';
 import type { EngineId } from '@/lib/engines/types';
 import { normalizeWhisperLanguage } from '@/lib/languages';
@@ -395,9 +396,9 @@ export function createOpenAICompatible(config: OpenAICompatibleConfig): OpenAICo
   };
 
   const speech: SpeechModel = {
-    async transcribe(wav, opts = {}) {
+    async transcribe(audio, opts = {}) {
       const form = new FormData();
-      form.append('file', wav, 'clip.wav');
+      form.append('file', encodeWav(audio), 'clip.wav');
       form.append('model', config.model);
       if (opts.language) form.append('language', opts.language);
       if (opts.prompt) form.append('prompt', opts.prompt);

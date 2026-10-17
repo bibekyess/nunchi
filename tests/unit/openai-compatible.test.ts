@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { encodeWav } from '@/lib/audio/wav';
 import {
   createOpenAICompatible,
   EndpointError,
@@ -260,11 +261,14 @@ describe('createOpenAICompatible: chat', () => {
 });
 
 describe('createOpenAICompatible: speech and models', () => {
-  it('posts the clip as multipart with model, language, prompt and verbose_json', async () => {
+  // Review finding D: the speech model takes 16 kHz samples and encodes the WAV itself, so
+  // on-device engines can share transcribeWithFallback without a WAV round trip.
+  it('posts the samples as a 16 kHz mono WAV, with model, language, prompt and verbose_json', async () => {
     const { c, calls } = client(() =>
       Response.json({ text: ' hello ', language: 'en', duration: 1 }),
     );
-    const result = await c.speech.transcribe(new Blob([new Uint8Array(10)]), {
+    const samples = new Float32Array(160).fill(0.25);
+    const result = await c.speech.transcribe(samples, {
       language: 'en',
       prompt: 'Kiro.',
     });
@@ -276,7 +280,11 @@ describe('createOpenAICompatible: speech and models', () => {
     expect(form.get('language')).toBe('en');
     expect(form.get('prompt')).toBe('Kiro.');
     expect(form.get('response_format')).toBe('verbose_json');
-    expect(form.get('file')).toBeInstanceOf(Blob);
+    const file = form.get('file') as Blob;
+    expect(file).toBeInstanceOf(Blob);
+    expect(new Uint8Array(await file.arrayBuffer())).toEqual(
+      new Uint8Array(await encodeWav(samples).arrayBuffer()),
+    );
   });
 
   it('lists model ids', async () => {

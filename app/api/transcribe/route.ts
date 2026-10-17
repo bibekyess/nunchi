@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { decodeWav, WavError } from '@/lib/audio/wav';
 import { transcribeWithFallback } from '@/lib/core/transcribe';
 import { langOrAutoSchema } from '@/lib/schemas';
 import { checkAccess } from '@/lib/server/auth';
@@ -49,7 +50,16 @@ export async function POST(request: Request) {
     const { language, prompt } = fields.data;
     audioBytes = audio.size;
 
-    const { result, firstMs, fallbackMs } = await transcribeWithFallback(serverSpeech, audio, {
+    // Only the clips the app records are accepted; Speaches gets them re-encoded unchanged.
+    let samples: Float32Array;
+    try {
+      samples = decodeWav(await audio.arrayBuffer());
+    } catch (err) {
+      if (err instanceof WavError) return jsonError('bad_request', err.message);
+      throw err;
+    }
+
+    const { result, firstMs, fallbackMs } = await transcribeWithFallback(serverSpeech, samples, {
       language,
       prompt,
       signal: request.signal,
