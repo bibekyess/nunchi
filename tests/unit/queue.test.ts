@@ -319,4 +319,15 @@ describe('PipelineQueue', () => {
     await flush();
     expect(state().byId[id].status).toBe('transcribing');
   });
+
+  it('ignores clips that arrive after dispose', async () => {
+    const deps = makeDeps();
+    const q = new PipelineQueue(deps);
+    q.dispose();
+    q.enqueue(clip());
+    await flush();
+    expect(state().ids).toHaveLength(0);
+    expect(deps.transcribe).not.toHaveBeenCalled();
+    expect(q.pendingClips).toBe(0);
+  });
 });

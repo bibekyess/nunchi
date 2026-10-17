@@ -48,7 +48,10 @@ export class PipelineQueue {
     return this.clips.size;
   }
 
+  /** Adds a clip as a new utterance and starts its job. Returns its id ('' once disposed). */
   enqueue(clip: Clip): string {
+    // A recorder can still deliver a clip while the session is being torn down.
+    if (this.signal.aborted) return '';
     const { session, addUtterance } = this.deps.getState();
     const id = this.deps.newId();
     addUtterance({

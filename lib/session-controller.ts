@@ -35,6 +35,8 @@ export class SessionController {
   private readonly wakeLock = new ScreenWakeLock();
   private lastFrameAt = 0;
   private busy = false;
+  /** Set by dispose(); a start() still in progress checks it after every step. */
+  private disposed = false;
 
   constructor() {
     this.queue = new PipelineQueue({
@@ -52,7 +54,7 @@ export class SessionController {
   }
 
   async start() {
-    if (this.busy || this.recorder) return;
+    if (this.disposed || this.busy || this.recorder) return;
     this.busy = true;
     this.store.setRecorder('starting');
     try {
@@ -60,10 +62,15 @@ export class SessionController {
         deviceId: savedDeviceId(),
         noiseSuppression: savedNoiseSuppression(),
       });
+      if (this.disposed) {
+        // Left the page while the browser was opening the mic: close it again.
+        input.dispose();
+        return;
+      }
       for (const track of input.micTracks) track.addEventListener('ended', this.onMicEnded);
       for (const track of input.tabTracks) track.addEventListener('ended', this.onTabEnded);
       this.input = input;
-      this.recorder = await SpeechRecorder.create(input.stream, loadVadSettings(), {
+      const recorder = await SpeechRecorder.create(input.stream, loadVadSettings(), {
         onClip: (clip) => this.queue.enqueue(clip),
         onLevel: (level) => {
           this.lastFrameAt = performance.now();
@@ -71,15 +78,27 @@ export class SessionController {
         },
         onSpeaking: (speaking) => this.store.setSpeaking(speaking),
       });
-      await this.recorder.start();
+      if (this.disposed) {
+        // Left while speech detection was loading; dispose() already closed the input.
+        await recorder.destroy();
+        return;
+      }
+      this.recorder = recorder;
+      await recorder.start();
+      if (this.disposed) return; // dispose() destroyed the recorder
       this.lastFrameAt = performance.now();
       await this.wakeLock.acquire();
+      if (this.disposed) {
+        await this.wakeLock.release();
+        return;
+      }
       this.store.setSharingStopped(false);
       this.store.setSessionEngines(getEngineChoice());
       this.store.setRecorder('listening');
     } catch (err) {
       this.recorder = null;
       this.closeInput();
+      if (this.disposed) return;
       if (err instanceof MicError && err.kind === 'cancelled') {
         // Closing the tab picker is a choice, not a failure.
         this.store.setRecorder('idle');
@@ -141,6 +160,7 @@ export class SessionController {
   }
 
   dispose() {
+    this.disposed = true;
     document.removeEventListener('visibilitychange', this.onVisibility);
     void this.recorder?.destroy();
     this.recorder = null;
