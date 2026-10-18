@@ -9,10 +9,10 @@ describe('buildWhisperPrompt', () => {
   it('lists unique glossary terms, then the last sentence', () => {
     expect(
       buildWhisperPrompt(
-        [{ term: '키로' }, { term: '팅커러스', translation: 'Tinkerers' }, { term: '키로' }],
+        [{ term: '지민' }, { term: '누리', translation: 'Nuri' }, { term: '지민' }],
         '안녕하세요.',
       ),
-    ).toBe('키로, 팅커러스. 안녕하세요.');
+    ).toBe('지민, 누리. 안녕하세요.');
   });
 
   it('stays within the length cap, keeping the end of the last sentence', () => {

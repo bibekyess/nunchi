@@ -21,10 +21,10 @@ beforeEach(() => {
 
 const body = {
   utterances: [
-    { seq: 1, sourceText: '키로가 스폰서입니다.', translation: 'Kiro is a sponsor.' },
+    { seq: 1, sourceText: '지민이 발표합니다.', translation: 'Jimin is presenting.' },
     { seq: 0, sourceText: '안녕하세요.', translation: 'Hello.' },
   ],
-  glossary: [{ term: '키로', translation: 'Kiro' }],
+  glossary: [{ term: '지민', translation: 'Jimin' }],
   outputLang: 'en',
 };
 
@@ -44,15 +44,15 @@ describe('POST /api/summarize', () => {
     server.use(
       http.post(`${LLM}/chat/completions`, async ({ request }) => {
         upstream = (await request.json()) as ChatBody;
-        return chatStream(['<think>\n</think>\n\n', '## Overview\n', 'Kiro sponsors.']);
+        return chatStream(['<think>\n</think>\n\n', '## Overview\n', 'Jimin presents.']);
       }),
     );
     const res = await POST(request(body));
     expect(res.status).toBe(200);
-    expect(await res.text()).toBe('## Overview\nKiro sponsors.');
+    expect(await res.text()).toBe('## Overview\nJimin presents.');
     expect(upstream?.stream).toBe(true);
     expect(upstream?.messages[1].content).toContain(
-      '[0] 안녕하세요. => Hello.\n[1] 키로가 스폰서입니다. => Kiro is a sponsor.',
+      '[0] 안녕하세요. => Hello.\n[1] 지민이 발표합니다. => Jimin is presenting.',
     );
   });
 

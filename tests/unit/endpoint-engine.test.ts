@@ -144,7 +144,7 @@ describe('endpoint engines against an OpenAI-compatible server', () => {
 
   it('streams a summary and rejects an empty transcript without calling the server', async () => {
     server.use(
-      http.post(`${BASE}/chat/completions`, () => chatStream(['## Overview\n', 'Kiro sponsors.'])),
+      http.post(`${BASE}/chat/completions`, () => chatStream(['## Overview\n', 'Jimin presents.'])),
     );
     const summary = endpointSummary(remote);
     const base = { glossary: [], outputLang: 'en' as const };
@@ -152,11 +152,11 @@ describe('endpoint engines against an OpenAI-compatible server', () => {
     const text = await summary.summarize(
       {
         ...base,
-        utterances: [{ seq: 0, sourceText: '키로가 후원합니다', translation: 'Kiro sponsors.' }],
+        utterances: [{ seq: 0, sourceText: '지민이 발표합니다', translation: 'Jimin presents.' }],
       },
       (d) => (streamed += d),
     );
-    expect(text).toBe('## Overview\nKiro sponsors.');
+    expect(text).toBe('## Overview\nJimin presents.');
     expect(streamed).toBe(text);
 
     const err = (await summary

@@ -24,7 +24,7 @@ const body = {
   sourceLang: 'ko',
   targetLang: 'en',
   context: [{ source: '안녕하세요.', translation: 'Hello.' }],
-  glossary: [{ term: '키로', translation: 'Kiro' }],
+  glossary: [{ term: '지민', translation: 'Jimin' }],
 };
 
 function request(payload: unknown) {
@@ -67,7 +67,7 @@ describe('POST /api/translate', () => {
       chat_template_kwargs: { enable_thinking: false },
     });
     const messages = upstream?.messages as { role: string; content: string }[];
-    expect(messages[0].content).toContain('키로 → Kiro');
+    expect(messages[0].content).toContain('지민 → Jimin');
     expect(messages[1].content).toContain('- 안녕하세요. => Hello.');
   });
 

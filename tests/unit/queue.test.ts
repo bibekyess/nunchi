@@ -242,7 +242,7 @@ describe('PipelineQueue', () => {
   });
 
   it('sends the five most recent finished lines as context, and the glossary', async () => {
-    state().setGlossary([{ term: '키로', translation: 'Kiro' }]);
+    state().setGlossary([{ term: '지민', translation: 'Jimin' }]);
     const bodies: TranslateRequest[] = [];
     const transcribe = vi.fn();
     for (let i = 0; i < 7; i++) transcribe.mockResolvedValueOnce(tr(`문장 ${i}`));
@@ -263,9 +263,9 @@ describe('PipelineQueue', () => {
       '문장 4',
       '문장 5',
     ]);
-    expect(last.glossary).toEqual([{ term: '키로', translation: 'Kiro' }]);
+    expect(last.glossary).toEqual([{ term: '지민', translation: 'Jimin' }]);
     // The Whisper prompt carries glossary terms and the previous sentence.
-    expect(transcribe.mock.calls.at(-1)?.[1]).toMatchObject({ prompt: '키로. 문장 5' });
+    expect(transcribe.mock.calls.at(-1)?.[1]).toMatchObject({ prompt: '지민. 문장 5' });
   });
 
   it('retries once at temperature 0 when the translation comes back untranslated', async () => {

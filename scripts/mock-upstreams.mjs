@@ -22,14 +22,13 @@ const HEADER_VALUE = process.env.MOCK_HEADER_VALUE;
 
 const KO_LINES = [
   '안녕하세요, 오늘 회의를 시작하겠습니다.',
-  '키로가 이번 밋업에 스폰서로 참여하게 됐습니다.',
+  '지민 님이 이번 릴리스 계획을 발표하겠습니다.',
   '번역 잘 되고 있나요?',
 ];
 const EN_LINES = ['Is the translation working well?', 'Thanks everyone for coming today.'];
 const TRANSLATIONS = {
   '안녕하세요, 오늘 회의를 시작하겠습니다.': "Hello, let's start today's meeting.",
-  '키로가 이번 밋업에 스폰서로 참여하게 됐습니다.':
-    'Kiro is participating in this meetup as a sponsor.',
+  '지민 님이 이번 릴리스 계획을 발표하겠습니다.': 'Jimin will present the plan for this release.',
   '번역 잘 되고 있나요?': 'Is the translation working well?',
   'Is the translation working well?': '번역 잘 되고 있나요?',
   'Thanks everyone for coming today.': '오늘 와 주셔서 모두 감사합니다.',
@@ -40,14 +39,14 @@ function mockSummary(user) {
   const lines = (user.match(/^\[\d+\] /gm) ?? []).length;
   return [
     '## Overview',
-    `The team opened the meeting and confirmed Kiro as a sponsor (${lines} lines).`,
+    `The team opened the meeting and Jimin presented the release plan (${lines} lines).`,
     '',
     '## Key points',
-    '- Kiro is sponsoring the meetup.',
+    '- Jimin presented the release plan.',
     '- Live translation is being checked.',
     '',
     '## Action items',
-    '- [ ] Kiro: confirm sponsorship details',
+    '- [ ] Jimin: share the release plan document',
   ].join('\n');
 }
 

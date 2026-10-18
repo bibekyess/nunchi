@@ -41,7 +41,7 @@ describe('POST /api/transcribe', () => {
       }),
     );
 
-    const res = await POST(request({ audio: wavBlob(), language: 'auto', prompt: '키로' }));
+    const res = await POST(request({ audio: wavBlob(), language: 'auto', prompt: '지민' }));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       text: '번역 잘 되고 있나요?',
@@ -51,7 +51,7 @@ describe('POST /api/transcribe', () => {
     });
     expect(sent?.get('model')).toBe('whisper-test');
     expect(sent?.get('language')).toBeNull(); // auto = let Whisper detect
-    expect(sent?.get('prompt')).toBe('키로');
+    expect(sent?.get('prompt')).toBe('지민');
     expect(sent?.get('temperature')).toBe('0');
     expect(sent?.get('response_format')).toBe('verbose_json');
     expect(sent?.get('file')).toBeInstanceOf(Blob);

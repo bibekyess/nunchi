@@ -47,8 +47,8 @@ export interface Session {
 }
 
 export interface GlossaryEntry {
-  term: string; // as spoken, e.g. "키로"
-  translation?: string; // e.g. "Kiro"
+  term: string; // as spoken, e.g. "지민"
+  translation?: string; // e.g. "Jimin"
 }
 
 export interface TranslationContextItem {

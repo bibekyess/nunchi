@@ -51,7 +51,7 @@ export function GlossaryDialog({ open, onClose }: { open: boolean; onClose: () =
         onChange={(e) => setContext(e.target.value)}
         rows={2}
         maxLength={1000}
-        placeholder="e.g. AI Tinkerers Seoul meetup, sponsor Kiro from AWS"
+        placeholder="e.g. Weekly product sync with the design team"
         className="mt-1.5 min-h-20"
       />
 
@@ -67,7 +67,7 @@ export function GlossaryDialog({ open, onClose }: { open: boolean; onClose: () =
               <Input
                 value={row.term}
                 onChange={(e) => update(i, { term: e.target.value })}
-                placeholder="As spoken (키로)"
+                placeholder="As spoken (지민)"
                 aria-label={`Term ${i + 1}`}
                 maxLength={100}
                 className="min-w-0 flex-1"
@@ -76,7 +76,7 @@ export function GlossaryDialog({ open, onClose }: { open: boolean; onClose: () =
               <Input
                 value={row.translation ?? ''}
                 onChange={(e) => update(i, { translation: e.target.value })}
-                placeholder="Translation (Kiro)"
+                placeholder="Translation (Jimin)"
                 aria-label={`Translation ${i + 1}`}
                 maxLength={200}
                 className="min-w-0 flex-1"

@@ -157,11 +157,11 @@ describe('transcribeWithFallback', () => {
 
   it('retries once in Korean when auto-detect picks an unsupported language', async () => {
     const { speech, transcribe } = fakeSpeech(result('ね', 'ja'), result('네.', undefined));
-    const out = await transcribeWithFallback(speech, wav, { language: 'auto', prompt: '키로.' });
+    const out = await transcribeWithFallback(speech, wav, { language: 'auto', prompt: '지민.' });
     expect(out.result).toMatchObject({ text: '네.', language: 'ko' });
     expect(out.fallbackMs).toEqual(expect.any(Number));
-    expect(transcribe.mock.calls[0][1]).toMatchObject({ language: undefined, prompt: '키로.' });
-    expect(transcribe.mock.calls[1][1]).toMatchObject({ language: 'ko', prompt: '키로.' });
+    expect(transcribe.mock.calls[0][1]).toMatchObject({ language: undefined, prompt: '지민.' });
+    expect(transcribe.mock.calls[1][1]).toMatchObject({ language: 'ko', prompt: '지민.' });
   });
 
   it('keeps a supported detection, a forced language and empty text as they are', async () => {

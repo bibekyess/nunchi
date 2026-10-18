@@ -7,8 +7,8 @@ import {
 } from '@/lib/prompts/summarize';
 
 const input = {
-  glossary: [{ term: '키로', translation: 'Kiro' }, { term: '팅커러스' }],
-  meetingContext: 'AI Tinkerers Seoul meetup',
+  glossary: [{ term: '지민', translation: 'Jimin' }, { term: '누리' }],
+  meetingContext: 'Weekly product sync',
   outputLang: 'en' as const,
 };
 
@@ -27,8 +27,8 @@ describe('summarize prompt', () => {
     expect(system.content).toContain('Write in English.');
     expect(system.content).toContain('## Action items');
     expect(system.content).not.toContain('part');
-    expect(user.content).toContain('Meeting context: AI Tinkerers Seoul meetup');
-    expect(user.content).toContain('Glossary: 키로 → Kiro, 팅커러스');
+    expect(user.content).toContain('Meeting context: Weekly product sync');
+    expect(user.content).toContain('Glossary: 지민 → Jimin, 누리');
     expect(user.content).toMatch(/Transcript \(original => translation\):\n\[0\] 네 => Yes$/);
   });
 

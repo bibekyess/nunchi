@@ -270,7 +270,7 @@ describe('createOpenAICompatible: speech and models', () => {
     const samples = new Float32Array(160).fill(0.25);
     const result = await c.speech.transcribe(samples, {
       language: 'en',
-      prompt: 'Kiro.',
+      prompt: 'Jimin.',
     });
     expect(result).toEqual({ text: 'hello', language: 'en', durationMs: 1000, segments: [] });
     const [url, init] = calls[0];
@@ -278,7 +278,7 @@ describe('createOpenAICompatible: speech and models', () => {
     const form = init.body as FormData;
     expect(form.get('model')).toBe('qwen3:4b');
     expect(form.get('language')).toBe('en');
-    expect(form.get('prompt')).toBe('Kiro.');
+    expect(form.get('prompt')).toBe('Jimin.');
     expect(form.get('response_format')).toBe('verbose_json');
     const file = form.get('file') as Blob;
     expect(file).toBeInstanceOf(Blob);
