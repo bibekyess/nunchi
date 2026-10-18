@@ -4,8 +4,9 @@ import { ArrowDown, Mic } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { LANG_CODES, SUPPORTED_LANGS } from '@/lib/languages';
 import { selectColumns, useDisplayStore } from '@/lib/display/store';
-import { useSessionStore } from '@/lib/session/store';
+import { useSessionStore, type RecorderState } from '@/lib/session/store';
 import { LangFlag } from '../LangFlag';
+import { startOrResume, useController } from '../session/controller-context';
 import { cx } from '../ui';
 import { UtteranceBlock } from './UtteranceBlock';
 
@@ -23,6 +24,7 @@ export function TranscriptList() {
     return last ? `${s.byId[last].status}:${s.byId[last].translation?.length ?? 0}` : '';
   });
   const recorder = useSessionStore((s) => s.recorder);
+  const controller = useController();
   const textSize = useDisplayStore((s) => s.textSize);
   const columns = useDisplayStore(selectColumns);
 
@@ -73,7 +75,7 @@ export function TranscriptList() {
         data-layout={columns ? 'columns' : 'stacked'}
       >
         {visibleCount === 0 ? (
-          <EmptyState recording={recorder === 'listening'} />
+          <EmptyState recorder={recorder} onStart={() => startOrResume(controller, recorder)} />
         ) : (
           <div
             className={cx(
@@ -129,7 +131,9 @@ function ColumnHeaders() {
 /** Bar heights for the listening waveform (they also read well when motion is reduced). */
 const WAVE = [0.45, 0.8, 1, 0.65, 0.9, 0.5, 0.7];
 
-function EmptyState({ recording }: { recording: boolean }) {
+function EmptyState({ recorder, onStart }: { recorder: RecorderState; onStart: () => void }) {
+  const recording = recorder === 'listening';
+  const paused = recorder === 'paused';
   return (
     <div className="flex h-full animate-fade-in flex-col items-center justify-center px-6 text-center">
       {recording ? (
@@ -150,13 +154,24 @@ function EmptyState({ recording }: { recording: boolean }) {
         </>
       ) : (
         <>
-          <div aria-hidden className="relative mb-6 flex h-24 w-24 items-center justify-center">
+          {/* Same action as the dock's mic button, since the copy below sends people here first.
+              A pointer shortcut only: keyboard and screen readers get the dock button alone, so
+              there are never two "Start listening" buttons. */}
+          <button
+            type="button"
+            onClick={onStart}
+            disabled={recorder === 'starting'}
+            aria-hidden
+            tabIndex={-1}
+            data-testid="empty-state-mic"
+            className="relative mb-6 flex h-24 w-24 items-center justify-center rounded-full transition-transform duration-200 ease-out enabled:cursor-pointer enabled:hover:scale-105 enabled:active:scale-95 disabled:opacity-60"
+          >
             <span className="absolute inset-0 animate-breathe rounded-full bg-lavender" />
             <span className="absolute inset-3 rounded-full bg-lavender-strong" />
-            <Mic className="relative h-8 w-8 text-accent-ink" strokeWidth={1.75} />
-          </div>
+            <Mic className="relative h-8 w-8 text-accent-ink" strokeWidth={1.75} aria-hidden />
+          </button>
           <p className="text-lg font-semibold tracking-tight text-ink">
-            Tap the microphone to start
+            {paused ? 'Tap the microphone to resume' : 'Tap the microphone to start'}
           </p>
           <p className="mt-1.5 max-w-xs text-sm text-ink-muted">
             Place the phone where it can hear the room. Korean is translated to English and English

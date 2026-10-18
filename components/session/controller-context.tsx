@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { openSession } from '@/lib/db/open-session';
 import { persistSession } from '@/lib/db/persist';
 import { SessionController } from '@/lib/session/controller';
-import { sessionStore, useSessionStore } from '@/lib/session/store';
+import { sessionStore, useSessionStore, type RecorderState } from '@/lib/session/store';
 
 const ControllerContext = createContext<SessionController | null>(null);
 
@@ -47,4 +47,10 @@ export function useController(): SessionController {
   const c = useContext(ControllerContext);
   if (!c) throw new Error('useController outside SessionControllerProvider');
   return c;
+}
+
+/** What a mic button does when not listening: start (or retry after an error), or resume. */
+export function startOrResume(controller: SessionController, recorder: RecorderState): void {
+  if (recorder === 'paused') void controller.resume();
+  else if (recorder === 'idle' || recorder === 'error') void controller.start();
 }

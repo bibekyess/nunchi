@@ -113,3 +113,16 @@ test('live session: speech becomes ordered bilingual blocks', async ({ page }) =
   await expect(row).toHaveCount(0);
   expect(consoleErrors.filter((e) => !e.includes('favicon'))).toEqual([]);
 });
+
+test('the empty-state microphone starts listening too', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByText('Servers ready')).toBeVisible();
+  await page.getByRole('button', { name: 'New session' }).click();
+  await expect(page).toHaveURL(/\/session\/[0-9a-f-]{36}$/);
+
+  // Hidden from assistive tech, so only one "Start listening" button is ever announced.
+  await expect(page.getByRole('button', { name: 'Start listening' })).toHaveCount(1);
+  await page.getByTestId('empty-state-mic').click();
+  await expect(page.getByRole('button', { name: 'Pause' })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Stop' }).click();
+});
