@@ -9,7 +9,13 @@ import {
   saveSession,
   setDb,
 } from '@/lib/db/dexie';
-import { persistSession, recoverUtterance, STREAM_DEBOUNCE_MS } from '@/lib/db/persist';
+import { openSession } from '@/lib/db/open-session';
+import {
+  persistSession,
+  recoverUtterance,
+  SAVE_RETRY_MS,
+  STREAM_DEBOUNCE_MS,
+} from '@/lib/db/persist';
 import { sessionStore } from '@/lib/store/session-store';
 import type { Session, Utterance } from '@/lib/types';
 
@@ -140,6 +146,26 @@ describe('persistSession', () => {
     expect(save.mock.calls.at(-1)?.[0]).toMatchObject({ durationMs: 7000 });
   });
 
+  it('writes again what a failed save left out', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const save = vi
+      .fn<(s: Session, u: Utterance[]) => Promise<void>>()
+      .mockRejectedValueOnce(new Error('QuotaExceededError'))
+      .mockResolvedValue(undefined);
+    stop = persistSession(sessionStore, { save });
+    state().addUtterance(utt('live', 0));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(save).toHaveBeenCalledTimes(1);
+
+    // The line is settled and won't change again: only the retry can save it.
+    await vi.advanceTimersByTimeAsync(SAVE_RETRY_MS);
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save.mock.calls[1][1]).toMatchObject([{ id: 'live-0', status: 'done' }]);
+    await vi.runAllTimersAsync();
+    expect(save).toHaveBeenCalledTimes(2);
+    vi.mocked(console.error).mockRestore();
+  });
+
   it('end-to-end: a reloaded session matches what was recorded', async () => {
     vi.useRealTimers(); // fake-indexeddb needs real timers
     stop = persistSession(sessionStore);
@@ -153,5 +179,51 @@ describe('persistSession', () => {
     state().hydrateSession(loaded!.session, loaded!.utterances.map(recoverUtterance));
     expect(state().ids).toEqual(['live-0', 'live-1']);
     expect(state().byId['live-1'].status).toBe('error');
+  });
+});
+
+describe('openSession', () => {
+  const state = () => sessionStore.getState();
+  const saved = (id: string) => ({ session: session(id), utterances: [utt(id, 0)] });
+
+  beforeEach(() => sessionStore.setState({ session: null, ids: [], byId: {} }));
+
+  it('loads a saved session, or starts a new one', async () => {
+    expect(
+      await openSession(sessionStore, 'a', new AbortController().signal, async () => saved('a')),
+    ).toEqual({ persist: true });
+    expect(state().session?.title).toBe('Meeting a');
+    expect(state().ids).toEqual(['a-0']);
+    expect(
+      await openSession(sessionStore, 'b', new AbortController().signal, async () => null),
+    ).toEqual({ persist: true });
+    expect(state().session?.id).toBe('b');
+    expect(state().ids).toEqual([]);
+  });
+
+  it('leaves the store alone when the user moved on before the load finished', async () => {
+    let finishA!: () => void;
+    const slowA = new Promise<void>((r) => (finishA = r));
+    const first = new AbortController();
+    const openingA = openSession(sessionStore, 'a', first.signal, async () => {
+      await slowA;
+      return saved('a');
+    });
+    first.abort(); // navigated to B
+    await openSession(sessionStore, 'b', new AbortController().signal, async () => saved('b'));
+    finishA();
+    expect(await openingA).toBeNull();
+    expect(state().session?.id).toBe('b');
+    expect(state().ids).toEqual(['b-0']);
+  });
+
+  it("doesn't save over a session it failed to load", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const opened = await openSession(sessionStore, 'a', new AbortController().signal, async () => {
+      throw new Error('blocked');
+    });
+    expect(opened).toEqual({ persist: false });
+    expect(state().session?.id).toBe('a');
+    vi.mocked(console.error).mockRestore();
   });
 });

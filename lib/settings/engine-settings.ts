@@ -193,6 +193,17 @@ export function endpointFor(endpoints: EndpointSettings, task: EngineTask): Endp
   return endpoints[task];
 }
 
+/** Whether the endpoint `task` would use differs between two sets of settings. */
+export function endpointChanged(
+  a: EndpointSettings,
+  b: EndpointSettings,
+  task: EngineTask,
+): boolean {
+  const x = endpointFor(a, task);
+  const y = endpointFor(b, task);
+  return (Object.keys(EMPTY_ENDPOINT) as (keyof EndpointConfig)[]).some((k) => x[k] !== y[k]);
+}
+
 export function loadEngineSettings(): EngineSettings {
   return readJson(ENGINE_SETTINGS_KEY, sanitizeEngineSettings);
 }

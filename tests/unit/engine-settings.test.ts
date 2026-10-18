@@ -3,6 +3,7 @@ import {
   DEFAULT_ENDPOINTS,
   DEFAULT_ENGINE_CHOICE,
   ENGINE_SETTINGS_KEY,
+  endpointChanged,
   endpointFor,
   endpointProblem,
   loadEngineChoice,
@@ -134,6 +135,19 @@ describe('endpoint settings', () => {
     const own = { ...ollama, model: 'qwen3:14b', sameAsTranslate: false };
     expect(endpointFor({ ...endpoints, summary: own }, 'summary')).toBe(own);
     expect(endpointFor(endpoints, 'speech')).toBe(endpoints.speech);
+  });
+
+  // Background status checks skip edited endpoints, so a half-typed URL never gets the key.
+  it('tells which tasks would use a different endpoint', () => {
+    const saved = { ...DEFAULT_ENDPOINTS, translate: ollama };
+    expect(endpointChanged(saved, { ...saved }, 'translate')).toBe(false);
+    const typing = { ...saved, translate: { ...ollama, baseUrl: 'https://api.ex' } };
+    expect(endpointChanged(typing, saved, 'translate')).toBe(true);
+    // The summary borrows the translation endpoint, so it changed too; speech didn't.
+    expect(endpointChanged(typing, saved, 'summary')).toBe(true);
+    expect(endpointChanged(typing, saved, 'speech')).toBe(false);
+    const split = { ...saved, summary: { ...DEFAULT_ENDPOINTS.summary, sameAsTranslate: false } };
+    expect(endpointChanged(split, saved, 'summary')).toBe(true);
   });
 
   it('says what is missing before an endpoint can be used', () => {

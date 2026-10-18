@@ -5,6 +5,9 @@ import { saveSession } from './dexie';
 
 /** Writes while a translation streams are batched this long. */
 export const STREAM_DEBOUNCE_MS = 1000;
+/** A failed write is tried again after this long, doubling up to the max while it keeps failing. */
+export const SAVE_RETRY_MS = 2000;
+export const SAVE_RETRY_MAX_MS = 30_000;
 
 const SETTLED: ReadonlySet<UtteranceStatus> = new Set(['done', 'skipped', 'error']);
 
@@ -43,6 +46,7 @@ export function persistSession(
   let timer: ReturnType<typeof setTimeout> | null = null;
   let chain: Promise<void> = Promise.resolve();
   let stopped = false;
+  let retryMs = SAVE_RETRY_MS;
 
   const flush = (): Promise<void> => {
     if (timer) clearTimeout(timer);
@@ -59,7 +63,22 @@ export function persistSession(
     // Serialize writes so an older snapshot never lands after a newer one.
     chain = chain
       .then(() => save(session, utterances))
-      .catch((err) => console.error('[db] save failed', err));
+      .then(
+        () => {
+          retryMs = SAVE_RETRY_MS;
+        },
+        (err) => {
+          console.error('[db] save failed', err);
+          // Settled utterances never change again, so unless they are marked again they would
+          // never be written. The next write reads them from the store, so it saves the latest.
+          for (const u of utterances) dirty.add(u.id);
+          sessionDirty = true;
+          if (!stopped && !timer) {
+            timer = setTimeout(flush, retryMs);
+            retryMs = Math.min(retryMs * 2, SAVE_RETRY_MAX_MS);
+          }
+        },
+      );
     return chain;
   };
 

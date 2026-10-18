@@ -9,6 +9,7 @@ import { useEngineStatuses } from '@/lib/engines/use-engine-status';
 import {
   cleanBaseUrl,
   DEFAULT_ENGINE_CHOICE,
+  endpointChanged,
   endpointIssues,
   sanitizeEndpoint,
   type EndpointConfig,
@@ -18,7 +19,7 @@ import {
 } from '@/lib/settings/engine-settings';
 import { useEngineSettings } from '@/lib/settings/use-engine-settings';
 import { EngineStatusBadge } from '../EngineStatusBadge';
-import { Button, cx, Dialog, SegmentedControl, Switch, type SegmentOption } from '../ui';
+import { Badge, Button, cx, Dialog, SegmentedControl, Switch, type SegmentOption } from '../ui';
 import { EndpointFields } from './EndpointFields';
 
 // Icons drop out on the narrowest phones so the three labels still fit on one row.
@@ -37,9 +38,6 @@ const TASKS: { task: EngineTask; title: string; hint: string }[] = [
 
 const ENGINE_ORDER: EngineId[] = ['server', 'endpoint', 'device'];
 
-/** Status checks wait until typing pauses, so they don't hit the server on every key. */
-const STATUS_DEBOUNCE_MS = 700;
-
 /**
  * Which endpoint config a task's fields edit: the summary edits the translation endpoint while
  * it borrows it, which is also what it will use.
@@ -49,15 +47,6 @@ function editedEndpoint(
   task: EngineTask,
 ): 'speech' | 'translate' | 'summary' {
   return task === 'summary' && endpoints.summary.sameAsTranslate ? 'translate' : task;
-}
-
-function useDebounced<T>(value: T, ms: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(value), ms);
-    return () => clearTimeout(t);
-  }, [value, ms]);
-  return debounced;
 }
 
 /** Where each task runs: the app's server, a custom endpoint, or this device. */
@@ -70,8 +59,9 @@ export function ProcessingDialog({ open, onClose }: { open: boolean; onClose: ()
     endpoints: savedEndpoints,
   });
   const [showProblems, setShowProblems] = useState(false);
-  const checkedEndpoints = useDebounced(draft.endpoints, STATUS_DEBOUNCE_MS);
-  const selected = useEngineStatuses(draft.choice, checkedEndpoints);
+  // Only saved endpoints are checked in the background: an edited one may be a half-typed URL,
+  // and the check would send it the API key. Test connection checks edits on request.
+  const selected = useEngineStatuses(draft.choice, savedEndpoints);
   // The server's own status per task tells whether it can be picked at all.
   const server = useEngineStatuses(DEFAULT_ENGINE_CHOICE, savedEndpoints);
 
@@ -182,7 +172,13 @@ export function ProcessingDialog({ open, onClose }: { open: boolean; onClose: ()
                 <h3 className="text-sm font-medium">{title}</h3>
                 <p className="text-sm text-ink-muted">{hint}</p>
               </div>
-              <EngineStatusBadge status={selected[task]} />
+              {custom && endpointChanged(endpoints, savedEndpoints, task) ? (
+                <Badge dot title="Saved settings are checked. Use Test connection for these.">
+                  Not checked
+                </Badge>
+              ) : (
+                <EngineStatusBadge status={selected[task]} />
+              )}
             </div>
             <SegmentedControl
               label={title}

@@ -8,4 +8,4 @@ services:
     env_file: .env.local
     ports:
       # Bound to localhost; put nginx (HTTPS) in front. The microphone needs HTTPS.
-      - '${PORT:-9083}:3000'
+      - '127.0.0.1:${PORT:-9083}:3000'
