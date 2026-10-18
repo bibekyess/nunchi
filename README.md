@@ -123,6 +123,7 @@ server {
         # Slows down guessing APP_ACCESS_TOKEN; a live session sends a few requests a second.
         limit_req zone=nunchi_api burst=40 nodelay;
         proxy_pass http://127.0.0.1:9083;
+        proxy_set_header X-Request-ID $request_id; # the app logs it and sends it back
         proxy_buffering off; # translations and summaries stream
         proxy_read_timeout 1200s; # long summaries
     }
@@ -136,6 +137,21 @@ The configuration is checked once when the server starts (`instrumentation.ts`):
 value stops it with an "Invalid server environment" message listing the problems, instead of
 failing every request later. In production, a missing `APP_ACCESS_TOKEN` logs a warning,
 since anyone who finds the URL could then use your GPU servers.
+
+### Logs
+
+The server logs one line per API request with its timings and sizes, never transcript or
+prompt text. In production the lines are JSON (`time`, `level`, `route`, `rid`, `msg` and
+numeric fields such as `ttftMs`), ready for a log collector; in development they read like
+`[translate] ok open=120ms ttft=380ms dir=ko->en out=214ch total=1902ms rid=…`. Set
+`LOG_FORMAT=json|pretty` to choose, and `LOG_LEVEL=debug|info|warn|error` (default `info`,
+`debug` in development; successful requests that have no timing line, such as health checks,
+are logged at `debug`).
+
+Every API response carries an `x-request-id` header, also logged as `rid`: the proxy's
+`X-Request-ID` when it sends one (as in the nginx example above), otherwise a new UUID. This
+server's own credentials (`LLM_HEADER_VALUE`, `LLM_API_KEY`, `SPEACHES_API_KEY`,
+`APP_ACCESS_TOKEN`) are replaced with `[redacted]` in logged upstream errors.
 
 ## Use your own server (Custom endpoint)
 

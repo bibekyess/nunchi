@@ -19,15 +19,14 @@ import {
   toUpstreamError,
 } from '@/lib/server/http';
 import { serverChat } from '@/lib/server/llm';
-import { logTiming, ms, startTimer } from '@/lib/server/timing';
+import { withRequestLog } from '@/lib/server/log';
 
 export const maxDuration = 300;
 
 /** Room for `SUMMARY_MAX_CHARS` of Korean (3 bytes a character) plus JSON and the glossary. */
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
-export async function POST(request: Request) {
-  const elapsed = startTimer();
+export const POST = withRequestLog('summarize', async (request, log) => {
   try {
     const denied = checkAccess(request);
     if (denied) return denied;
@@ -45,34 +44,37 @@ export async function POST(request: Request) {
 
     // Open the upstream stream before answering, so failures become a JSON error.
     let run: SummaryRun;
-    let parts: string | undefined;
+    let parts: number | undefined;
+    let partsMs: number | undefined;
     try {
       run = await startSummary(serverChat, input, lines, {
         signal: request.signal,
-        onPartsDone: (count, partsMs) => (parts = `${count}/${partsMs}ms`),
+        onPartsDone: (count, ms) => {
+          parts = count;
+          partsMs = ms;
+        },
       });
     } catch (err) {
       if (request.signal.aborted) {
-        logTiming('summarize', 'aborted', { parts, total: ms(elapsed()), lines: lines.length });
+        log.done('aborted', { parts, partsMs, lines: lines.length });
         return new Response(null, { status: 499 });
       }
       throw toUpstreamError(err);
     }
-    const openMs = elapsed();
+    const openMs = log.elapsed();
 
     return streamText({
-      route: 'summarize',
+      log,
       text: run.text,
       abort: run.abort,
       signal: request.signal,
-      elapsed,
-      fields: ({ ttft, total }) => ({ parts, open: ms(openMs), ttft, total, lines: lines.length }),
-      okFields: (outChars) => ({ out: `${outChars}ch` }),
+      fields: ({ ttftMs }) => ({ parts, partsMs, openMs, ttftMs, lines: lines.length }),
+      okFields: (outChars) => ({ outChars }),
       // The merge prompt is long; its first piece may take the model's whole call timeout.
       firstMs: SUMMARY_TIMEOUT_MS + 30_000,
     });
   } catch (err) {
-    logTiming('summarize', 'error', { total: ms(elapsed()) });
-    return errorResponse('summarize', err);
+    log.done('error');
+    return errorResponse(log, err);
   }
-}
+});

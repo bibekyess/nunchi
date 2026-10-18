@@ -159,6 +159,19 @@ describe('POST /api/transcribe', () => {
     info.mockRestore();
   });
 
+  it('answers with a request id, keeping the one the proxy sent', async () => {
+    server.use(
+      http.post(`${SPEACHES}/audio/transcriptions`, () => HttpResponse.json(verbose('네.', 'ko'))),
+    );
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const fresh = await POST(request({ audio: wavBlob() }));
+    expect(fresh.headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/);
+    const echoed = await POST(request({ audio: wavBlob() }, { 'x-request-id': 'abc-123' }));
+    expect(echoed.headers.get('x-request-id')).toBe('abc-123');
+    expect(info.mock.calls.some((c) => /^\[transcribe\] ok .*rid=abc-123$/.test(c[0]))).toBe(true);
+    info.mockRestore();
+  });
+
   it('requires the access token when one is configured', async () => {
     vi.stubEnv('APP_ACCESS_TOKEN', 'letmein');
     resetEnvCache();

@@ -50,6 +50,7 @@ describe('a server without some upstreams', () => {
       new Request('http://app.test/api/transcribe', { method: 'POST', body: form }),
     );
     expect(res.status).toBe(503);
+    expect(res.headers.get('x-request-id')).toBeTruthy();
     expect(await res.json()).toEqual({
       error: { code: 'not_configured', message: 'Speech-to-text is not set up on this server.' },
     });
@@ -93,5 +94,6 @@ describe('a server without some upstreams', () => {
       new Request('http://app.test/api/transcribe', { method: 'POST', body: form }),
     );
     expect(res.status).toBe(401);
+    expect(res.headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/);
   });
 });

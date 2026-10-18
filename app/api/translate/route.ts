@@ -10,7 +10,7 @@ import {
   toUpstreamError,
 } from '@/lib/server/http';
 import { serverChat } from '@/lib/server/llm';
-import { logTiming, ms, startTimer } from '@/lib/server/timing';
+import { withRequestLog } from '@/lib/server/log';
 
 export const maxDuration = 60;
 
@@ -20,8 +20,7 @@ export const maxDuration = 60;
  */
 const MAX_BODY_BYTES = 1024 * 1024;
 
-export async function POST(request: Request) {
-  const elapsed = startTimer();
+export const POST = withRequestLog('translate', async (request, log) => {
   try {
     const denied = checkAccess(request);
     if (denied) return denied;
@@ -42,27 +41,26 @@ export async function POST(request: Request) {
     } catch (err) {
       // The client went away (stopped, navigated); nothing to send back.
       if (request.signal.aborted) {
-        logTiming('translate', 'aborted', { total: ms(elapsed()), dir });
+        log.done('aborted', { dir });
         return new Response(null, { status: 499 });
       }
       throw toUpstreamError(err);
     }
-    const openMs = elapsed();
+    const openMs = log.elapsed();
 
     return streamText({
-      route: 'translate',
+      log,
       text: run.text,
       abort: run.abort,
       signal: request.signal,
-      elapsed,
-      fields: ({ ttft, total }) => ({ open: ms(openMs), ttft, total, dir }),
+      fields: ({ ttftMs }) => ({ openMs, ttftMs, dir }),
       okFields: (outChars) => ({
-        out: `${outChars}ch`,
+        outChars,
         retry: run.emptyRetry ? 'empty' : input.retry ? 'client' : undefined,
       }),
     });
   } catch (err) {
-    logTiming('translate', 'error', { total: ms(elapsed()) });
-    return errorResponse('translate', err);
+    log.done('error');
+    return errorResponse(log, err);
   }
-}
+});

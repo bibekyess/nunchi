@@ -2,6 +2,30 @@
 
 Changes to, or details not covered by, the implementation plan. Newest first.
 
+## 2026-10-18 — Server logs
+
+`lib/server/log.ts` replaces the timing lines of `lib/server/timing.ts` with a small logger of
+our own (no dependency).
+
+- **Format:** JSON lines in production, for a log collector; readable lines otherwise, kept
+  close to the old ones (`[translate] ok open=120ms … rid=…`). `LOG_FORMAT` and `LOG_LEVEL`
+  override, read from `process.env` on each call so logging works while the env is invalid.
+  Durations are numbers named `…Ms` (`out` is `outChars`, `size` is `sizeKb`, summary `parts` is
+  `parts` + `partsMs`). Lines go through `console.debug/info/warn/error` by level.
+- **Request id:** the proxy's `x-request-id` when it looks like one (`[A-Za-z0-9._-]`, up to
+  128), else a UUID; logged as `rid` and sent back on every API response. A request that ends
+  without its timing line (a 401, a 400, health) gets one `response status=…` line: at info
+  when it failed, at debug when it succeeded so polling stays quiet.
+- **Explicit logger, not AsyncLocalStorage:** each route is `withRequestLog(route, (request,
+log) => …)`, and `log` is passed on to `streamText` and `errorResponse`. Easy to follow and
+  to test, with no hidden context to lose across streams. Next's route type check accepts the
+  wrapped `export const POST`.
+- **Secrets stay out:** upstream error bodies were logged as they came, and an upstream may
+  echo the auth header. Logged details now go through `redactSecrets` (this server's
+  `LLM_HEADER_VALUE`, `LLM_API_KEY`, `SPEACHES_API_KEY`, `APP_ACCESS_TOKEN`) and are cut to 500
+  characters (stacks to 2,000); fields whose key looks like a credential are dropped. The
+  logger never sees request headers or bodies.
+
 ## 2026-10-18 — lib layout and hook convention
 
 `lib/` is grouped by what the code is for, so a file's folder says what it may depend on.

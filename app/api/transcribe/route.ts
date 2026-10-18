@@ -4,8 +4,8 @@ import { transcribeWithFallback } from '@/lib/core/transcribe';
 import { checkAccess } from '@/lib/server/auth';
 import { isConfigured } from '@/lib/server/env';
 import { errorResponse, jsonError, notConfigured, readBodyLimited } from '@/lib/server/http';
+import { withRequestLog } from '@/lib/server/log';
 import { serverSpeech } from '@/lib/server/speaches';
-import { logTiming, ms, startTimer } from '@/lib/server/timing';
 
 export const maxDuration = 60;
 
@@ -13,8 +13,7 @@ const MAX_AUDIO_BYTES = 2 * 1024 * 1024; // ~65 s of 16 kHz 16-bit mono; clips a
 /** The clip plus the form's other fields and boundaries. */
 const MAX_BODY_BYTES = MAX_AUDIO_BYTES + 64 * 1024;
 
-export async function POST(request: Request) {
-  const elapsed = startTimer();
+export const POST = withRequestLog('transcribe', async (request, log) => {
   let audioBytes: number | undefined;
   try {
     const denied = checkAccess(request);
@@ -64,27 +63,25 @@ export async function POST(request: Request) {
       signal: request.signal,
     });
 
-    logTiming('transcribe', 'ok', {
-      speaches: ms(firstMs),
-      fallback: ms(fallbackMs),
-      total: ms(elapsed()),
-      audio: ms(result.durationMs),
-      size: `${Math.round(audio.size / 1024)}KB`,
+    log.done('ok', {
+      speachesMs: firstMs,
+      fallbackMs,
+      audioMs: result.durationMs,
+      sizeKb: Math.round(audio.size / 1024),
       lang: result.language ?? 'none',
       mode: language === 'auto' ? 'auto' : 'forced',
     });
     return Response.json(result);
   } catch (err) {
     const fields = {
-      total: ms(elapsed()),
-      size: audioBytes === undefined ? undefined : `${Math.round(audioBytes / 1024)}KB`,
+      sizeKb: audioBytes === undefined ? undefined : Math.round(audioBytes / 1024),
     };
     // The client went away (stopped, navigated); the cut-off upstream call isn't an error.
     if (request.signal.aborted) {
-      logTiming('transcribe', 'aborted', fields);
+      log.done('aborted', fields);
       return new Response(null, { status: 499 });
     }
-    logTiming('transcribe', 'error', fields);
-    return errorResponse('transcribe', err);
+    log.done('error', fields);
+    return errorResponse(log, err);
   }
-}
+});

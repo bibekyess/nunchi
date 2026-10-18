@@ -4,9 +4,10 @@ import { checkAccess } from '@/lib/server/auth';
 import { isConfigured, type Service } from '@/lib/server/env';
 import { errorResponse } from '@/lib/server/http';
 import { pingLlm } from '@/lib/server/llm';
+import { withRequestLog } from '@/lib/server/log';
 import { pingSpeaches } from '@/lib/server/speaches';
 
-export async function GET(request: Request) {
+export const GET = withRequestLog('health', async (request, log) => {
   await connection(); // always run at request time, never prerendered
   try {
     const denied = checkAccess(request);
@@ -22,6 +23,6 @@ export async function GET(request: Request) {
       headers: { 'Cache-Control': 'no-store' },
     });
   } catch (err) {
-    return errorResponse('health', err);
+    return errorResponse(log, err);
   }
-}
+});

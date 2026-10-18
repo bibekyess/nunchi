@@ -5,6 +5,7 @@ import { createOpenAICompatible } from '@/lib/core/openai-compatible';
 import { serverSpeech, serverTranslate } from '@/lib/engines/server';
 import { EngineError } from '@/lib/errors';
 import { streamText } from '@/lib/server/http';
+import { createRequestLog } from '@/lib/server/log';
 
 const encoder = new TextEncoder();
 
@@ -170,12 +171,11 @@ describe('streamText (server)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const res = streamText({
-      route: 'translate',
+      log: createRequestLog('translate'),
       text: stalled(),
       abort,
       signal: new AbortController().signal,
-      elapsed: () => 0,
-      fields: ({ ttft, total }) => ({ ttft, total }),
+      fields: ({ ttftMs }) => ({ ttftMs }),
       idleMs: 50,
     });
     const reader = res.body!.getReader();

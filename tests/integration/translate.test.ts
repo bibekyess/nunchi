@@ -135,6 +135,33 @@ describe('POST /api/translate', () => {
     spy.mockRestore();
   });
 
+  it('keeps the LLM credentials out of the JSON logs when an upstream echoes them', async () => {
+    vi.stubEnv('LOG_FORMAT', 'json');
+    const spies = (['debug', 'info', 'warn', 'error'] as const).map((level) =>
+      vi.spyOn(console, level).mockImplementation(() => {}),
+    );
+    server.use(
+      http.post(`${LLM}/chat/completions`, () =>
+        HttpResponse.json({ error: { message: 'bad header secret-value' } }, { status: 401 }),
+      ),
+    );
+    const res = await POST(request(body));
+    expect(res.status).toBe(502);
+
+    const lines = spies.flatMap((spy) => spy.mock.calls.map((c) => String(c[0])));
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) {
+      expect(JSON.parse(line)).toMatchObject({
+        route: 'translate',
+        rid: res.headers.get('x-request-id'),
+        level: expect.any(String),
+      });
+      expect(line).not.toContain('secret-value');
+    }
+    expect(lines.join('\n')).toContain('bad header [redacted]');
+    for (const spy of spies) spy.mockRestore();
+  });
+
   it('validates the body', async () => {
     expect((await POST(request({ ...body, text: '   ' }))).status).toBe(400);
     expect((await POST(request({ ...body, targetLang: 'ja' }))).status).toBe(400);

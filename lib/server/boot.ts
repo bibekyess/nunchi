@@ -1,5 +1,6 @@
 import 'server-only';
 import { getEnv, isConfigured } from './env';
+import { createLogger } from './log';
 
 /**
  * Checks the server's configuration once, at startup (see instrumentation.ts): an invalid
@@ -11,8 +12,8 @@ export function checkEnvAtBoot(): void {
   const env = getEnv();
   const upstreams = isConfigured('speaches', env) || isConfigured('llm', env);
   if (process.env.NODE_ENV === 'production' && upstreams && !env.APP_ACCESS_TOKEN) {
-    console.warn(
-      '[nunchi] APP_ACCESS_TOKEN is not set: anyone who can reach this server can use its speech and LLM servers. Set it whenever the app is reachable from outside a trusted network.',
+    createLogger({ scope: 'boot' }).warn(
+      'APP_ACCESS_TOKEN is not set: anyone who can reach this server can use its speech and LLM servers. Set it whenever the app is reachable from outside a trusted network.',
     );
   }
 }

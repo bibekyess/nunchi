@@ -5,7 +5,7 @@ import { EngineError } from '@/lib/errors';
 import type { ApiErrorBody } from '@/lib/api/contract';
 import { withIdleTimeout } from '@/lib/util/streams';
 import type { Service } from './env';
-import { logTiming, ms, type Field } from './timing';
+import type { Fields, RequestLog } from './log';
 
 export type ErrorCode =
   | 'unauthorized'
@@ -152,17 +152,16 @@ export async function parseJsonBody<S extends z.ZodType>(
 export const STREAM_IDLE_MS = 90_000;
 
 export interface StreamTextOptions {
-  route: string;
+  /** The request's logger; `log.done` is called when the stream ends. */
+  log: RequestLog;
   text: AsyncIterable<string>;
   /** Stops the upstream request when the client goes away. */
   abort: () => void;
   signal: AbortSignal;
-  /** Milliseconds since the request started. */
-  elapsed: () => number;
-  /** Log fields for every outcome, in log order; `ttft` and `total` are filled in here. */
-  fields: (t: { ttft: Field; total: Field }) => Record<string, Field>;
+  /** Log fields for every outcome, in log order; `ttftMs` is filled in here, `totalMs` by `done`. */
+  fields: (t: { ttftMs: number | undefined }) => Fields;
   /** Extra log fields on success, given the number of characters sent. */
-  okFields?: (outChars: number) => Record<string, Field>;
+  okFields?: (outChars: number) => Fields;
   /** Longest gap between pieces (default `STREAM_IDLE_MS`). */
   idleMs?: number;
   /** Time allowed for the first piece (default `idleMs`). */
@@ -175,11 +174,10 @@ export interface StreamTextOptions {
  * that stops coming ends the response as an upstream timeout and stops the upstream.
  */
 export function streamText({
-  route,
+  log,
   text,
   abort,
   signal,
-  elapsed,
   fields,
   okFields,
   idleMs = STREAM_IDLE_MS,
@@ -190,31 +188,30 @@ export function streamText({
     async start(controller) {
       let outChars = 0;
       let ttftMs: number | undefined;
-      const timings = () => fields({ ttft: ms(ttftMs), total: ms(elapsed()) });
       const pieces = withIdleTimeout(text, idleMs, {
         firstMs,
         signal,
         onTimeout: abort,
-        error: () => new EngineError('timeout', `The ${route} stream stalled.`),
+        error: () => new EngineError('timeout', `The ${log.route} stream stalled.`),
       });
       try {
         for await (const piece of pieces) {
           if (!piece) continue;
-          ttftMs ??= elapsed();
+          ttftMs ??= log.elapsed();
           outChars += piece.length;
           controller.enqueue(encoder.encode(piece));
         }
-        logTiming(route, 'ok', { ...timings(), ...okFields?.(outChars) });
+        log.done('ok', { ...fields({ ttftMs }), ...okFields?.(outChars) });
         controller.close();
       } catch (err) {
         if (signal.aborted) {
-          logTiming(route, 'aborted', timings());
+          log.done('aborted', fields({ ttftMs }));
           controller.close();
           return;
         }
         const e = toUpstreamError(err);
-        logTiming(route, 'error', timings());
-        console.error(`[${route}] stream failed: ${e.message}`, e.detail?.slice(0, 500) ?? '');
+        log.done('error', fields({ ttftMs }));
+        log.error('stream failed', upstreamFields(e));
         controller.error(e);
       }
     },
@@ -232,14 +229,60 @@ export function streamText({
   });
 }
 
+/** Longest text taken from an upstream error body or an error message into a log line. */
+const MAX_DETAIL_CHARS = 500;
+/** Longest stack trace in a log line. */
+const MAX_STACK_CHARS = 2000;
+
+export function truncate(text: string, max = MAX_DETAIL_CHARS): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+/**
+ * Replaces this server's own credentials in `text` with `[redacted]`. An upstream may echo the
+ * request's auth header in its error body, and those bodies are logged.
+ */
+export function redactSecrets(text: string): string {
+  const env = process.env;
+  const secrets = [
+    env.LLM_HEADER_VALUE,
+    env.LLM_API_KEY === 'none' ? undefined : env.LLM_API_KEY,
+    env.SPEACHES_API_KEY,
+    env.APP_ACCESS_TOKEN,
+  ]
+    .map((s) => s?.trim())
+    .filter((s): s is string => Boolean(s));
+  return secrets.reduce((out, secret) => out.split(secret).join('[redacted]'), text);
+}
+
+/** Text from outside (error bodies, messages) made safe and short enough to log. */
+const detailField = (text: string | undefined, max?: number) =>
+  text === undefined ? undefined : truncate(redactSecrets(text), max);
+
+function upstreamFields(err: UpstreamError): Fields {
+  return {
+    service: err.service,
+    code: err.code,
+    status: err.status,
+    detail: detailField(err.detail),
+  };
+}
+
+/** Log fields for an unexpected error: its name, message and the start of its stack. */
+export function errorFields(err: unknown): Fields {
+  if (!(err instanceof Error)) return { errMessage: detailField(String(err)) };
+  return {
+    errName: err.name,
+    errMessage: detailField(err.message),
+    stack: detailField(err.stack, MAX_STACK_CHARS),
+  };
+}
+
 /** Map anything thrown inside a route to a safe JSON error and log the detail. */
-export function errorResponse(route: string, err: unknown): Response {
+export function errorResponse(log: RequestLog, err: unknown): Response {
   if (err instanceof NotConfiguredError) return notConfigured(err.service);
   if (err instanceof UpstreamError) {
-    console.error(
-      `[${route}] ${err.message}`,
-      err.detail ? `detail: ${err.detail.slice(0, 500)}` : '',
-    );
+    log.error('upstream failed', upstreamFields(err));
     return jsonError(
       err.code,
       err.code === 'upstream_timeout'
@@ -248,9 +291,9 @@ export function errorResponse(route: string, err: unknown): Response {
     );
   }
   if (err instanceof Error && err.message.startsWith('Invalid server environment')) {
-    console.error(`[${route}] ${err.message}`);
+    log.error('invalid configuration', { errMessage: detailField(err.message) });
     return jsonError('server_misconfigured', 'The server is missing configuration.');
   }
-  console.error(`[${route}] unexpected error`, err);
+  log.error('unexpected error', errorFields(err));
   return jsonError('internal_error', 'Unexpected server error.');
 }
