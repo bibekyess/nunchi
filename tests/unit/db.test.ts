@@ -166,6 +166,22 @@ describe('persistSession', () => {
     vi.mocked(console.error).mockRestore();
   });
 
+  it('shows that saving fails until a save works again', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const save = vi
+      .fn<(s: Session, u: Utterance[]) => Promise<void>>()
+      .mockRejectedValueOnce(new Error('QuotaExceededError'))
+      .mockResolvedValue(undefined);
+    stop = persistSession(sessionStore, { save });
+    state().addUtterance(utt('live', 0));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(state().saveProblem).toBe('failing');
+
+    await vi.advanceTimersByTimeAsync(SAVE_RETRY_MS);
+    expect(state().saveProblem).toBeNull();
+    vi.mocked(console.error).mockRestore();
+  });
+
   it('end-to-end: a reloaded session matches what was recorded', async () => {
     vi.useRealTimers(); // fake-indexeddb needs real timers
     stop = persistSession(sessionStore);
@@ -224,6 +240,7 @@ describe('openSession', () => {
     });
     expect(opened).toEqual({ persist: false });
     expect(state().session?.id).toBe('a');
+    expect(state().saveProblem).toBe('unavailable');
     vi.mocked(console.error).mockRestore();
   });
 });

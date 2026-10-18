@@ -6,7 +6,13 @@ import {
   VLLM_NO_THINKING,
   type OpenAICompatibleClient,
 } from '@/lib/core/openai-compatible';
-import { startSummary, summaryLines } from '@/lib/core/summarize';
+import {
+  startSummary,
+  SUMMARY_MAX_CHARS,
+  SUMMARY_TOO_LONG_MESSAGE,
+  summaryLines,
+  transcriptChars,
+} from '@/lib/core/summarize';
 import { transcribeWithFallback } from '@/lib/core/transcribe';
 import { runTranslation } from '@/lib/core/translate';
 import { EngineError } from '@/lib/errors';
@@ -145,6 +151,10 @@ export function endpointSummary(config: EndpointConfig): SummaryEngine {
     summarize: (request, onDelta, signal) =>
       withHints(async () => {
         requireComplete(config, 'summary');
+        // Same cap as the server route: past it, a summary takes too many model calls.
+        if (transcriptChars(request.utterances) > SUMMARY_MAX_CHARS) {
+          throw new EngineError('bad_request', SUMMARY_TOO_LONG_MESSAGE, { engine: 'endpoint' });
+        }
         const lines = summaryLines(request.utterances);
         if (lines.length === 0) {
           throw new EngineError('bad_request', 'The transcript is empty.', { engine: 'endpoint' });
@@ -161,3 +171,4 @@ export function endpointSummary(config: EndpointConfig): SummaryEngine {
       }),
   };
 }
+

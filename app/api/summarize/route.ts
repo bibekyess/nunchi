@@ -3,7 +3,9 @@ import {
   startSummary,
   SUMMARY_MAX_CHARS,
   SUMMARY_TIMEOUT_MS,
+  SUMMARY_TOO_LONG_MESSAGE,
   summaryLines,
+  transcriptChars,
   type SummaryRun,
 } from '@/lib/core/summarize';
 import { glossarySchema, langSchema, meetingContextSchema } from '@/lib/schemas';
@@ -52,15 +54,8 @@ export async function POST(request: Request) {
     if (error) return error;
 
     const { utterances, ...input } = data;
-    const chars = utterances.reduce(
-      (n, u) => n + u.sourceText.length + (u.translation?.length ?? 0),
-      0,
-    );
-    if (chars > SUMMARY_MAX_CHARS) {
-      return jsonError(
-        'payload_too_large',
-        `The transcript is too long to summarize (over ${SUMMARY_MAX_CHARS.toLocaleString('en')} characters).`,
-      );
+    if (transcriptChars(utterances) > SUMMARY_MAX_CHARS) {
+      return jsonError('payload_too_large', SUMMARY_TOO_LONG_MESSAGE);
     }
     const lines = summaryLines(utterances);
     if (lines.length === 0) return jsonError('bad_request', 'The transcript is empty.');

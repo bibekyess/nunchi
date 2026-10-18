@@ -1,11 +1,11 @@
 'use client';
 
-import { TriangleAlert, KeyRound, MonitorX, RotateCw, WifiOff, X } from 'lucide-react';
+import { DatabaseZap, KeyRound, MonitorX, RotateCw, TriangleAlert, WifiOff, X } from 'lucide-react';
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { needsNetwork } from '@/lib/engines/registry';
 import { setAccessToken } from '@/lib/engines/server';
 import { useEngineSettings } from '@/lib/settings/use-engine-settings';
-import { useSessionStore } from '@/lib/store/session-store';
+import { useSessionStore, type SaveProblem } from '@/lib/store/session-store';
 import { Button, cx, IconButton, Input } from '../ui';
 import { useController } from './controller-context';
 
@@ -68,12 +68,19 @@ function Banner({
   );
 }
 
+const SAVE_PROBLEM_TEXT: Record<SaveProblem, string> = {
+  unavailable:
+    "This session can't be saved on this device (storage is blocked). Keep this tab open until you're done.",
+  failing: 'Saving to this device is failing. Retrying; keep this tab open.',
+};
+
 export function Banners() {
   const controller = useController();
   const interrupted = useSessionStore((s) => s.interrupted);
   const setInterrupted = useSessionStore((s) => s.setInterrupted);
   const sharingStopped = useSessionStore((s) => s.sharingStopped);
   const setSharingStopped = useSessionStore((s) => s.setSharingStopped);
+  const saveProblem = useSessionStore((s) => s.saveProblem);
   const needsToken = useSessionStore((s) => s.needsAccessToken);
   const setNeedsToken = useSessionStore((s) => s.setNeedsAccessToken);
   const failed = useSessionStore((s) => s.ids.filter((id) => s.byId[id].status === 'error').length);
@@ -98,6 +105,11 @@ export function Banners() {
       {!online && usesNetwork && (
         <Banner tone="warn" icon={<WifiOff />}>
           <span>Offline. Speech is kept and sent when the connection returns.</span>
+        </Banner>
+      )}
+      {saveProblem && (
+        <Banner tone="warn" icon={<DatabaseZap />}>
+          <span>{SAVE_PROBLEM_TEXT[saveProblem]}</span>
         </Banner>
       )}
       {interrupted && (

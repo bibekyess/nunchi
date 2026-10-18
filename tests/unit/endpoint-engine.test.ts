@@ -8,6 +8,7 @@ import {
   endpointTranslate,
   isLoopback,
 } from '@/lib/engines/endpoint';
+import { SUMMARY_MAX_CHARS } from '@/lib/core/summarize';
 import type { TranslateRequest } from '@/lib/engines/types';
 import { EngineError } from '@/lib/errors';
 import { EMPTY_ENDPOINT } from '@/lib/settings/engine-settings';
@@ -162,6 +163,27 @@ describe('endpoint engines against an OpenAI-compatible server', () => {
       .summarize({ ...base, utterances: [{ seq: 0, sourceText: '  ' }] }, () => {})
       .catch((e: unknown) => e)) as EngineError;
     expect(err).toMatchObject({ kind: 'bad_request', message: 'The transcript is empty.' });
+  });
+
+  it('refuses a transcript over the summary cap without calling the server', async () => {
+    let calls = 0;
+    server.use(
+      http.post(`${BASE}/chat/completions`, () => {
+        calls++;
+        return chatStream(['unused']);
+      }),
+    );
+    const long = 'a'.repeat(2000);
+    const utterances = Array.from({ length: SUMMARY_MAX_CHARS / 2000 + 1 }, (_, seq) => ({
+      seq,
+      sourceText: long,
+    }));
+    const err = (await endpointSummary(remote)
+      .summarize({ utterances, glossary: [], outputLang: 'en' }, () => {})
+      .catch((e: unknown) => e)) as EngineError;
+    expect(err).toMatchObject({ kind: 'bad_request', retryable: false, engine: 'endpoint' });
+    expect(err.message).toMatch(/too long to summarize/);
+    expect(calls).toBe(0);
   });
 
   it('marks an unreachable endpoint as retryable network trouble', async () => {

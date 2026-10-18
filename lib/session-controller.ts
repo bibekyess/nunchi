@@ -28,6 +28,8 @@ export class SessionController {
   private input: AudioInput | null = null;
   private readonly wakeLock = new ScreenWakeLock();
   private lastFrameAt = 0;
+  /** Pending check that audio resumed after the page became visible. */
+  private stallTimer: ReturnType<typeof setTimeout> | null = null;
   private busy = false;
   /** Set by dispose(); a start() still in progress checks it after every step. */
   private disposed = false;
@@ -156,6 +158,7 @@ export class SessionController {
   dispose() {
     this.disposed = true;
     document.removeEventListener('visibilitychange', this.onVisibility);
+    this.clearStallTimer();
     void this.recorder?.destroy();
     this.recorder = null;
     this.closeInput();
@@ -178,6 +181,11 @@ export class SessionController {
     for (const track of input.micTracks) track.removeEventListener('ended', this.onMicEnded);
     for (const track of input.tabTracks) track.removeEventListener('ended', this.onTabEnded);
     input.dispose();
+  }
+
+  private clearStallTimer() {
+    if (this.stallTimer) clearTimeout(this.stallTimer);
+    this.stallTimer = null;
   }
 
   private inputEnded() {
@@ -219,7 +227,9 @@ export class SessionController {
       return;
     }
     const since = performance.now();
-    setTimeout(() => {
+    this.clearStallTimer();
+    this.stallTimer = setTimeout(() => {
+      this.stallTimer = null;
       // Mobile browsers can silently stop delivering audio while hidden.
       if (this.store.recorder === 'listening' && this.lastFrameAt < since) this.interrupted();
     }, STALL_MS);

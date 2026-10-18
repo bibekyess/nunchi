@@ -30,5 +30,6 @@ export async function openSession(
   const state = store.getState();
   if (saved) state.hydrateSession(saved.session, saved.utterances.map(recoverUtterance));
   else state.startSession(sessionId);
+  if (!persist) state.setSaveProblem('unavailable');
   return { persist };
 }

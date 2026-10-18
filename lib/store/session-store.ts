@@ -6,6 +6,12 @@ import type { GlossaryEntry, Lang, Session, TranslationMode, Utterance } from '@
 
 export type RecorderState = 'idle' | 'starting' | 'listening' | 'paused' | 'error';
 
+/**
+ * Why the session isn't being saved on this device: storage couldn't be opened at all
+ * (`unavailable`), or writes are failing and being retried (`failing`).
+ */
+export type SaveProblem = 'unavailable' | 'failing';
+
 export interface SessionState {
   session: Session | null;
   /** Utterance ids in speech order (by seq). Components select one utterance each by id. */
@@ -24,6 +30,7 @@ export interface SessionState {
   /** The user stopped sharing the tab whose audio we were transcribing. */
   sharingStopped: boolean;
   needsAccessToken: boolean;
+  saveProblem: SaveProblem | null;
 
   // Session
   startSession: (id: string) => void;
@@ -48,6 +55,7 @@ export interface SessionState {
   setInterrupted: (interrupted: boolean) => void;
   setSharingStopped: (stopped: boolean) => void;
   setNeedsAccessToken: (needs: boolean) => void;
+  setSaveProblem: (problem: SaveProblem | null) => void;
 }
 
 /** Remembered across sessions on this device: the last glossary pre-fills new sessions. */
@@ -103,6 +111,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
   interrupted: false,
   sharingStopped: false,
   needsAccessToken: false,
+  saveProblem: null,
 
   startSession: (id) => {
     if (get().session?.id === id) return;
@@ -117,6 +126,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
       ids: [],
       byId: {},
       listenedMs: 0,
+      saveProblem: null,
       ...RESET_RECORDER,
     });
   },
@@ -128,6 +138,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
       ids: sorted.map((u) => u.id),
       byId: Object.fromEntries(sorted.map((u) => [u.id, u])),
       listenedMs: session.durationMs ?? 0,
+      saveProblem: null,
       ...RESET_RECORDER,
     });
   },
@@ -211,6 +222,9 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
   setInterrupted: (interrupted) => set({ interrupted }),
   setSharingStopped: (sharingStopped) => set({ sharingStopped }),
   setNeedsAccessToken: (needsAccessToken) => set({ needsAccessToken }),
+  setSaveProblem: (saveProblem) => {
+    if (get().saveProblem !== saveProblem) set({ saveProblem });
+  },
 }));
 
 /** Non-React access for the pipeline. */

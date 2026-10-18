@@ -48,6 +48,12 @@ export function persistSession(
   let stopped = false;
   let retryMs = SAVE_RETRY_MS;
 
+  /** Shows (or clears) the "not saved" notice, unless another session is open by now. */
+  const reportFailing = (failing: boolean) => {
+    const state = store.getState();
+    if (state.session?.id === sessionId) state.setSaveProblem(failing ? 'failing' : null);
+  };
+
   const flush = (): Promise<void> => {
     if (timer) clearTimeout(timer);
     timer = null;
@@ -66,9 +72,11 @@ export function persistSession(
       .then(
         () => {
           retryMs = SAVE_RETRY_MS;
+          reportFailing(false);
         },
         (err) => {
           console.error('[db] save failed', err);
+          reportFailing(true);
           // Settled utterances never change again, so unless they are marked again they would
           // never be written. The next write reads them from the store, so it saves the latest.
           for (const u of utterances) dirty.add(u.id);

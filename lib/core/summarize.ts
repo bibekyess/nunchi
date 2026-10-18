@@ -20,6 +20,7 @@ export const SUMMARY_TIMEOUT_MS = 180_000;
  * hours of dense talk, i.e. at most ~13 parts, instead of hundreds of LLM calls.
  */
 export const SUMMARY_MAX_CHARS = 300_000;
+export const SUMMARY_TOO_LONG_MESSAGE = `The transcript is too long to summarize (over ${SUMMARY_MAX_CHARS.toLocaleString('en')} characters).`;
 const PART_CONCURRENCY = 2;
 
 /** Formatted transcript lines in speech order, blank ones dropped. */
@@ -28,6 +29,11 @@ export function summaryLines(utterances: SummaryLine[]): string[] {
     .filter((u) => u.sourceText.trim())
     .sort((a, b) => a.seq - b.seq)
     .map(formatLine);
+}
+
+/** Characters of transcript text (originals plus translations), checked against the cap. */
+export function transcriptChars(utterances: SummaryLine[]): number {
+  return utterances.reduce((n, u) => n + u.sourceText.length + (u.translation?.length ?? 0), 0);
 }
 
 export interface SummaryRun {

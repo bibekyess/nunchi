@@ -110,6 +110,29 @@ describe('SessionController', () => {
     expect(mocks.openAudioInput).not.toHaveBeenCalled();
   });
 
+  it('drops a pending stall check when disposed', async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.openAudioInput.mockResolvedValue(fakeInput());
+      mocks.createRecorder.mockResolvedValue(fakeRecorder());
+      const controller = new SessionController();
+      await controller.start();
+      vi.advanceTimersByTime(100); // no audio frame since starting
+      // Back to the page: a stall check is scheduled.
+      for (const [type, listener] of vi.mocked(document.addEventListener).mock.calls) {
+        if (type === 'visibilitychange') (listener as () => void)();
+      }
+      controller.dispose();
+      // The next session is listening when the old check would have fired.
+      sessionStore.getState().startSession(`next${Math.random()}`);
+      sessionStore.getState().setRecorder('listening');
+      await vi.runAllTimersAsync();
+      expect(sessionStore.getState().interrupted).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('starts normally when nothing interrupts it', async () => {
     const input = fakeInput();
     const recorder = fakeRecorder();
