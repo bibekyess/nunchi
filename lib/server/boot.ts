@@ -17,3 +17,19 @@ export function checkEnvAtBoot(): void {
     );
   }
 }
+
+/**
+ * Runs checkEnvAtBoot and stops the process on an invalid environment. Lives here rather than
+ * in instrumentation.ts so the edge build of that file never sees process.exit.
+ */
+export function runBootCheck(): void {
+  try {
+    checkEnvAtBoot();
+  } catch (err) {
+    // Next would log this and keep serving 500s; stop instead.
+    createLogger({ scope: 'boot' }).error('invalid configuration', {
+      errMessage: err instanceof Error ? err.message : String(err),
+    });
+    process.exit(1);
+  }
+}
