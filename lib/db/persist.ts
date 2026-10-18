@@ -1,7 +1,7 @@
 import type { StoreApi } from 'zustand';
 import { elapsedMs, type SessionState } from '@/lib/store/session-store';
 import type { Session, Utterance, UtteranceStatus } from '@/lib/types';
-import { saveSession } from './dexie';
+import { saveSession, sessionStats, type SessionStats } from './dexie';
 
 /** Writes while a translation streams are batched this long. */
 export const STREAM_DEBOUNCE_MS = 1000;
@@ -26,7 +26,7 @@ export function recoverUtterance(u: Utterance): Utterance {
 }
 
 export interface PersistOptions {
-  save?: (session: Session, utterances: Utterance[]) => Promise<void>;
+  save?: (session: Session, utterances: Utterance[], stats: SessionStats) => Promise<void>;
   now?: () => number;
 }
 
@@ -64,11 +64,13 @@ export function persistSession(
     if (!sessionDirty && dirty.size === 0) return chain;
     const session: Session = { ...state.session, durationMs: elapsedMs(state, now()) };
     const utterances = [...dirty].map((id) => state.byId[id]).filter(Boolean);
+    // The store holds every line of the session, so the list stats can be worked out here.
+    const stats = sessionStats(state.ids.map((id) => state.byId[id]));
     dirty.clear();
     sessionDirty = false;
     // Serialize writes so an older snapshot never lands after a newer one.
     chain = chain
-      .then(() => save(session, utterances))
+      .then(() => save(session, utterances, stats))
       .then(
         () => {
           retryMs = SAVE_RETRY_MS;
