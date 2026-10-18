@@ -1,8 +1,8 @@
 'use client';
 
 import { Loader2, Mic, Pause, Square } from 'lucide-react';
-import { useSessionStore } from '@/lib/store/session-store';
-import { useController } from '../session/controller-context';
+import { useSessionStore } from '@/lib/session/store';
+import { startOrResume, useController } from '../session/controller-context';
 import { cx, IconButton } from '../ui';
 
 // The mic level changes many times a second: only these two small components subscribe to it.
@@ -64,8 +64,7 @@ export function RecordBar() {
 
   const onMain = () => {
     if (recorder === 'listening') void controller.pause();
-    else if (recorder === 'paused') void controller.resume();
-    else if (recorder === 'idle' || recorder === 'error') void controller.start();
+    else startOrResume(controller, recorder);
   };
 
   const mainLabel =

@@ -33,6 +33,12 @@ The implementation plan lives in the shared plan doc; decisions made while build
   with the session. Search, Markdown export, Copy all and the installable PWA were left out
   on purpose: the goal is following Korean meetings, not archiving or sharing them.
 - **Phases 4–5 (speaker labels, share links, server storage): not planned for now.**
+- **Engines (see [`docs/ENGINES-PLAN.md`](docs/ENGINES-PLAN.md)): Phases 0–2 done.** A
+  **Processing** dialog (home header and the session ⋯ menu) picks where speech to text,
+  translation and summary run: **Server** (this app's upstreams) or **Custom** (your own
+  OpenAI-compatible server, called straight from the browser; see
+  [Use your own server](#use-your-own-server-custom-endpoint)). This device (on-device models)
+  is listed as coming soon.
 
 ## Setup
 
@@ -68,7 +74,7 @@ pnpm smoke           # terminal 3
 
 The browser tests (`pnpm e2e`) start the mock and the built app themselves (set
 `E2E_MOCK_PORT` if 8788 is taken). They cover the live session, the view filter, text size,
-side-by-side layout, reload recovery, the summary tab, the recent-sessions list, and tab-audio capture (Chromium's fake capture UI auto-accepts the share). It uses Playwright's
+side-by-side layout, reload recovery, the summary tab, the recent-sessions list, the Processing dialog, a full session in Custom mode against a second app server with no upstreams, and tab-audio capture (Chromium's fake capture UI auto-accepts the share). It uses Playwright's
 Chromium, or the one at `PLAYWRIGHT_CHROMIUM_PATH` if set. The speech fixture is the public-domain
 JFK sample from whisper.cpp.
 
@@ -97,18 +103,128 @@ proxy such as nginx in front: browsers only allow the microphone over HTTPS (or 
 The env file is read at container start, never baked into the image. After editing it, run
 `docker compose up -d` again to recreate the container.
 
+The app sends its own security headers (a Content Security Policy, `Permissions-Policy`,
+`X-Frame-Options` and others; see `next.config.ts`). HSTS and rate limiting belong on the
+proxy, which terminates HTTPS. For example, in nginx:
+
+```nginx
+# In the http block: 10 API requests a second per client address.
+limit_req_zone $binary_remote_addr zone=nunchi_api:10m rate=10r/s;
+
+server {
+    listen 443 ssl;
+    server_name nunchi.example.com;
+    # ssl_certificate ... / ssl_certificate_key ...
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    client_max_body_size 3m; # transcribe clips are at most 2 MB
+
+    location /api/ {
+        # Slows down guessing APP_ACCESS_TOKEN; a live session sends a few requests a second.
+        limit_req zone=nunchi_api burst=40 nodelay;
+        proxy_pass http://127.0.0.1:9083;
+        proxy_set_header X-Request-ID $request_id; # the app logs it and sends it back
+        proxy_buffering off; # translations and summaries stream
+        proxy_read_timeout 1200s; # long summaries
+    }
+    location / {
+        proxy_pass http://127.0.0.1:9083;
+    }
+}
+```
+
+The configuration is checked once when the server starts (`instrumentation.ts`): an invalid
+value stops it with an "Invalid server environment" message listing the problems, instead of
+failing every request later. In production, a missing `APP_ACCESS_TOKEN` logs a warning,
+since anyone who finds the URL could then use your GPU servers.
+
+### Logs
+
+The server logs one line per API request with its timings and sizes, never transcript or
+prompt text. In production the lines are JSON (`time`, `level`, `route`, `rid`, `msg` and
+numeric fields such as `ttftMs`), ready for a log collector; in development they read like
+`[translate] ok open=120ms ttft=380ms dir=ko->en out=214ch total=1902ms rid=…`. Set
+`LOG_FORMAT=json|pretty` to choose, and `LOG_LEVEL=debug|info|warn|error` (default `info`,
+`debug` in development; successful requests that have no timing line, such as health checks,
+are logged at `debug`).
+
+Every API response carries an `x-request-id` header, also logged as `rid`: the proxy's
+`X-Request-ID` when it sends one (as in the nginx example above), otherwise a new UUID. This
+server's own credentials (`LLM_HEADER_VALUE`, `LLM_API_KEY`, `SPEACHES_API_KEY`,
+`APP_ACCESS_TOKEN`) are replaced with `[redacted]` in logged upstream errors.
+
+## Use your own server (Custom endpoint)
+
+In **Processing**, set any task to **Custom** and point it at an OpenAI-compatible server.
+The browser calls that server directly: its URL and API key are stored in this browser only and
+never pass through the nunchi server. The app server's own upstreams can even be left empty
+(`SPEACHES_BASE_URL`, `LLM_BASE_URL`), and a custom endpoint on `localhost` keeps working
+offline.
+
+Speech to text needs `/v1/audio/transcriptions` (Whisper-style); translation and summary need
+`/v1/chat/completions`. The summary uses the translation server unless you switch off "Same as
+translation". Use **Test connection** after filling in a task: it tells a wrong URL, a CORS
+block, a refused key and a missing model apart.
+
+Example: everything on your laptop.
+
+```bash
+# Translation and summary: Ollama (http://localhost:11434/v1)
+ollama pull qwen3:4b
+ollama serve
+
+# Speech to text: Speaches (http://localhost:8000/v1). Use the latest-cuda tag with an NVIDIA GPU.
+docker run --rm -p 8000:8000 ghcr.io/speaches-ai/speaches:latest-cpu
+```
+
+Then in Processing pick the Ollama and Speaches presets and enter the models (e.g.
+`qwen3:4b`, and a Whisper model your Speaches has, such as `Systran/faster-whisper-large-v3`;
+see the Speaches docs for downloading models). LM Studio works the same way on
+`http://localhost:1234/v1`. For vLLM with Qwen3, turn on "Disable thinking" under More options.
+
+**CORS.** The server must allow requests from the page's address, or the browser blocks the
+response:
+
+- Ollama already allows pages on `localhost`. If nunchi runs on another address (e.g. your
+  HTTPS domain), start Ollama with that address in `OLLAMA_ORIGINS`, e.g.
+  `OLLAMA_ORIGINS=https://nunchi.example.com ollama serve`.
+- LM Studio: turn on CORS in its server settings.
+- vLLM: `--allowed-origins` (with `--allowed-headers` if you send a custom header).
+- Speaches and anything else: check its CORS setting.
+
+**HTTPS and localhost.** A page served over `https://` can't call plain `http://` on another
+machine (mixed content): give that server HTTPS too. `http://localhost` is the exception in
+Chrome and Edge, which may first ask to allow access to devices on your local network. If your
+browser still blocks it, open nunchi itself on `http://localhost`.
+
 ## API
 
 All routes return errors as `{ error: { code, message } }` and require the `x-nunchi-token`
 header when `APP_ACCESS_TOKEN` is set. Upstream error bodies are logged, never forwarded.
 
-- `GET /api/health` → `{ speaches: 'ok' | 'error', llm: 'ok' | 'error' }`
-- `POST /api/transcribe` (multipart: `audio` WAV ≤ 2 MB, `language` `ko|en|auto`, `prompt` ≤ 200
+`POST /api/unlock` with `{ "passcode": "…" }` returns `{ token, expiresAt }`: a token signed
+with the passcode that expires after 7 days. The browser stores only this token, never the
+passcode, so someone reading `localStorage` on a shared computer can't learn the passcode and
+loses access when the token expires. Changing `APP_ACCESS_TOKEN` revokes every token at once.
+`x-nunchi-token` accepts either the token or the passcode itself (for scripts like the smoke
+test).
+
+Each upstream is optional. Leave `SPEACHES_BASE_URL` empty (or both `LLM_BASE_URL` and
+`LLM_MODEL`) and the routes for that service answer `503` with code `not_configured`; the
+Processing settings then show Server as not available for that task.
+
+- `GET /api/health` → `{ speaches, llm }`, each `'ok' | 'error' | 'not_configured'`
+- `POST /api/transcribe` (multipart: `audio` ≤ 2 MB, `language` `ko|en|auto`, `prompt` ≤ 200
   chars) → `{ text, language, durationMs, segments: [{ text, noSpeechProb, avgLogprob }] }`.
-  In auto mode, a detected language outside Korean/English triggers one re-transcription as Korean.
+  The audio must be a 16 kHz mono 16-bit PCM WAV (what the app records); anything else is
+  rejected with `400`. In auto mode, a detected language outside Korean/English triggers one
+  re-transcription as Korean.
 - `POST /api/translate` (JSON: `text, sourceLang, targetLang, context[≤5], glossary, meetingContext?`)
   → streamed `text/plain`. Qwen thinking is disabled via `chat_template_kwargs`, and any
   `<think>` block is stripped anyway. An empty result is retried once at temperature 0.
 - `POST /api/summarize` (JSON: `utterances[{ seq, sourceText, translation? }]` ≤ 5000,
   `glossary, meetingContext?, outputLang`) → streamed markdown. Transcripts over ~24k
   characters are summarized in parts (two at a time) and the parts merged into one summary.
+  Transcripts over 300,000 characters (well past a two-hour meeting) are rejected with `413`.
+
+Request bodies are size-checked before they are read: oversized requests get `413`.

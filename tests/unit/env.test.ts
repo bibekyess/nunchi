@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseEnv } from '@/lib/server/env';
+import { isConfigured, parseEnv } from '@/lib/server/env';
 
 const valid = {
   SPEACHES_BASE_URL: 'https://stt.example.com/v1/',
@@ -22,8 +22,24 @@ describe('parseEnv', () => {
     expect(env.APP_ACCESS_TOKEN).toBeUndefined();
   });
 
-  it('fails with a readable message when required values are missing', () => {
-    expect(() => parseEnv({})).toThrow(/Invalid server environment[\s\S]*SPEACHES_BASE_URL/);
+  it('leaves an upstream unset when its variables are empty', () => {
+    const env = parseEnv({});
+    expect(env.SPEACHES_BASE_URL).toBeUndefined();
+    expect(env.LLM_BASE_URL).toBeUndefined();
+    expect(isConfigured('speaches', env)).toBe(false);
+    expect(isConfigured('llm', env)).toBe(false);
+    expect(isConfigured('speaches', parseEnv(valid))).toBe(true);
+    expect(isConfigured('llm', parseEnv(valid))).toBe(true);
+  });
+
+  it('fails with a readable message on a bad URL or an LLM URL without a model', () => {
+    expect(() => parseEnv({ SPEACHES_BASE_URL: 'not a url' })).toThrow(
+      /Invalid server environment[\s\S]*SPEACHES_BASE_URL/,
+    );
+    expect(() => parseEnv({ LLM_BASE_URL: 'https://llm.example.com/v1' })).toThrow(
+      /LLM_BASE_URL and LLM_MODEL must be set together/,
+    );
+    expect(() => parseEnv({ LLM_MODEL: 'qwen' })).toThrow(/LLM_MODEL/);
   });
 
   it('requires the custom header name and value together', () => {

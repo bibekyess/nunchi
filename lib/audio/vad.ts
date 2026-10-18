@@ -27,6 +27,8 @@ export class SpeechRecorder {
   private vad: MicVAD | null = null;
   private speechStartedAt: number | null = null;
   private splitTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Between start() and pause()/destroy(); a force-split only restarts while this holds. */
+  private listening = false;
   private readonly t0 = performance.now();
 
   private constructor(private readonly callbacks: SpeechRecorderCallbacks) {}
@@ -67,17 +69,20 @@ export class SpeechRecorder {
   }
 
   async start() {
+    this.listening = true;
     await this.vad?.start();
   }
 
   /** Pausing submits any speech in progress as a clip. */
   async pause() {
+    this.listening = false;
     this.clearSplitTimer();
     await this.vad?.pause();
     this.callbacks.onLevel?.(0);
   }
 
   async destroy() {
+    this.listening = false;
     this.clearSplitTimer();
     try {
       await this.vad?.destroy();
@@ -114,9 +119,16 @@ export class SpeechRecorder {
 
   /** Long monologue: submit what we have and keep listening. */
   private async forceSplit() {
-    if (!this.vad) return;
-    await this.vad.pause(); // submitUserSpeechOnPause → onSpeechEnd with the audio so far
-    await this.vad.start();
+    const vad = this.vad;
+    if (!vad) return;
+    try {
+      await vad.pause(); // submitUserSpeechOnPause → onSpeechEnd with the audio so far
+      // Paused or destroyed (Stop, leaving the page) meanwhile: don't bring it back.
+      if (this.vad !== vad || !this.listening) return;
+      await vad.start();
+    } catch (err) {
+      console.error('[recorder] force-split failed', err);
+    }
   }
 
   private clearSplitTimer() {

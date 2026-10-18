@@ -1,3 +1,4 @@
+import type { EngineChoice } from './engines/ids';
 import type { Lang } from './languages';
 
 export type { Lang };
@@ -41,11 +42,13 @@ export interface Session {
   meetingContext?: string;
   summary?: string; // markdown
   summaryLang?: Lang; // language the summary is written in
+  /** Engines in use when listening last started (absent on sessions from before engines). */
+  engines?: EngineChoice;
 }
 
 export interface GlossaryEntry {
-  term: string; // as spoken, e.g. "키로"
-  translation?: string; // e.g. "Kiro"
+  term: string; // as spoken, e.g. "지민"
+  translation?: string; // e.g. "Jimin"
 }
 
 export interface TranslationContextItem {
@@ -61,12 +64,8 @@ export interface TranscriptionSegment {
 
 export interface TranscriptionResult {
   text: string;
-  /** ISO code when supported, otherwise whatever Whisper reported. */
-  language: string | undefined;
+  /** ISO code when supported, otherwise whatever Whisper reported; absent when none. */
+  language?: string;
   durationMs: number;
   segments: TranscriptionSegment[];
-}
-
-export interface ApiErrorBody {
-  error: { code: string; message: string };
 }

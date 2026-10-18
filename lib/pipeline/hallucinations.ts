@@ -48,6 +48,8 @@ export function hallucinationReason({
   const norm = normalize(result.text);
   if (norm === '') return 'empty';
   if (FILLERS.has(norm)) return 'filler';
+  // Only servers that report segment scores can trip this; without them (plain `json`, or
+  // missing fields read as confident speech) the text checks above and below still apply.
   if (
     result.segments.length > 0 &&
     result.segments.every((s) => s.noSpeechProb > 0.6 && s.avgLogprob < -1.0)

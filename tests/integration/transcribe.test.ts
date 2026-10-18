@@ -3,6 +3,7 @@ import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { POST } from '@/app/api/transcribe/route';
 import { resetEnvCache } from '@/lib/server/env';
+import { readFileSync } from 'node:fs';
 import { SPEACHES, TEST_ENV, wavBlob } from './helpers';
 
 const server = setupServer();
@@ -40,7 +41,7 @@ describe('POST /api/transcribe', () => {
       }),
     );
 
-    const res = await POST(request({ audio: wavBlob(), language: 'auto', prompt: '키로' }));
+    const res = await POST(request({ audio: wavBlob(), language: 'auto', prompt: '지민' }));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       text: '번역 잘 되고 있나요?',
@@ -50,10 +51,31 @@ describe('POST /api/transcribe', () => {
     });
     expect(sent?.get('model')).toBe('whisper-test');
     expect(sent?.get('language')).toBeNull(); // auto = let Whisper detect
-    expect(sent?.get('prompt')).toBe('키로');
+    expect(sent?.get('prompt')).toBe('지민');
     expect(sent?.get('temperature')).toBe('0');
     expect(sent?.get('response_format')).toBe('verbose_json');
     expect(sent?.get('file')).toBeInstanceOf(Blob);
+  });
+
+  it('sends Speaches the recorded clip byte for byte', async () => {
+    let file: Blob | undefined;
+    server.use(
+      http.post(`${SPEACHES}/audio/transcriptions`, async ({ request }) => {
+        file = (await request.formData()).get('file') as Blob;
+        return HttpResponse.json(verbose('안녕하세요.', 'ko'));
+      }),
+    );
+    const fixture = readFileSync('tests/fixtures/ko-sample.wav');
+    const res = await POST(request({ audio: new Blob([fixture], { type: 'audio/wav' }) }));
+    expect(res.status).toBe(200);
+    expect(Buffer.from(await file!.arrayBuffer()).equals(fixture)).toBe(true);
+  });
+
+  it('rejects uploads that are not 16 kHz mono 16-bit WAV', async () => {
+    const notWav = new Blob([new Uint8Array(3200)], { type: 'audio/wav' });
+    const res = await POST(request({ audio: notWav }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toBe('Not a WAV file.');
   });
 
   it('passes a forced language through', async () => {
@@ -104,6 +126,50 @@ describe('POST /api/transcribe', () => {
     expect(text).toContain('upstream_error');
     expect(text).not.toContain('SECRET123');
     spy.mockRestore();
+  });
+
+  it('logs a client abort as aborted, not as an upstream error', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const client = new AbortController();
+    server.use(
+      http.post(`${SPEACHES}/audio/transcriptions`, async () => {
+        client.abort(); // the user stops while Speaches is still working
+        await new Promise((r) => setTimeout(r, 50));
+        return HttpResponse.json(verbose('네.', 'ko'));
+      }),
+    );
+    const form = new FormData();
+    form.append('audio', wavBlob());
+    const res = await POST(
+      new Request('http://app.test/api/transcribe', {
+        method: 'POST',
+        body: form,
+        signal: client.signal,
+      }),
+    );
+
+    expect(res.status).toBe(499);
+    const lines = [...error.mock.calls, ...warn.mock.calls].map((c) => c.join(' '));
+    expect(lines.some((l) => l.includes('upstream_error'))).toBe(false);
+    expect(info.mock.calls.some((c) => String(c[0]).startsWith('[transcribe] aborted'))).toBe(true);
+    error.mockRestore();
+    warn.mockRestore();
+    info.mockRestore();
+  });
+
+  it('answers with a request id, keeping the one the proxy sent', async () => {
+    server.use(
+      http.post(`${SPEACHES}/audio/transcriptions`, () => HttpResponse.json(verbose('네.', 'ko'))),
+    );
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const fresh = await POST(request({ audio: wavBlob() }));
+    expect(fresh.headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/);
+    const echoed = await POST(request({ audio: wavBlob() }, { 'x-request-id': 'abc-123' }));
+    expect(echoed.headers.get('x-request-id')).toBe('abc-123');
+    expect(info.mock.calls.some((c) => /^\[transcribe\] ok .*rid=abc-123$/.test(c[0]))).toBe(true);
+    info.mockRestore();
   });
 
   it('requires the access token when one is configured', async () => {

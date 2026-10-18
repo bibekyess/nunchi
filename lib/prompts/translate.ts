@@ -1,5 +1,7 @@
+import type { ChatMessage } from '@/lib/core/models';
 import { langName, type Lang } from '@/lib/languages';
 import type { GlossaryEntry, TranslationContextItem } from '@/lib/types';
+import { formatGlossary } from './glossary';
 
 export interface TranslatePromptInput {
   text: string;
@@ -8,20 +10,6 @@ export interface TranslatePromptInput {
   context: TranslationContextItem[];
   glossary: GlossaryEntry[];
   meetingContext?: string;
-}
-
-export interface ChatMessage {
-  role: 'system' | 'user';
-  content: string;
-}
-
-function glossaryLines(glossary: GlossaryEntry[]): string {
-  const lines = glossary
-    .filter((g) => g.term.trim() !== '')
-    .map((g) =>
-      g.translation?.trim() ? `${g.term.trim()} → ${g.translation.trim()}` : g.term.trim(),
-    );
-  return lines.length ? lines.join('\n') : '(none)';
 }
 
 export function buildTranslateMessages(input: TranslatePromptInput): ChatMessage[] {
@@ -40,7 +28,7 @@ export function buildTranslateMessages(input: TranslatePromptInput): ChatMessage
     "- Match the speaker's register: casual stays casual, formal stays polite.",
     '- Keep numbers, product names, and code identifiers exactly as spoken.',
     '- Always use these glossary translations:',
-    glossaryLines(input.glossary),
+    formatGlossary(input.glossary, '\n'),
   ]
     .filter((line, i) => i !== 0 || line !== '')
     .join('\n');

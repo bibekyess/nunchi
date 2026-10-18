@@ -3,7 +3,7 @@
 import { ChevronDown } from 'lucide-react';
 import { LANG_CODES, SUPPORTED_LANGS } from '@/lib/languages';
 import type { ViewLang } from '@/lib/display/view';
-import { useDisplayStore } from '@/lib/store/display-store';
+import { useDisplayStore } from '@/lib/display/store';
 import { LangFlag } from '../LangFlag';
 import { cx, SELECT_PILL } from '../ui';
 

@@ -1,30 +1,31 @@
-import { z } from 'zod';
-import { LANG_CODES, isLang } from '@/lib/languages';
+import { transcribeFieldsSchema } from '@/lib/api/contract';
+import { decodeWav, WavError } from '@/lib/audio/wav';
+import { transcribeWithFallback } from '@/lib/core/transcribe';
 import { checkAccess } from '@/lib/server/auth';
-import { errorResponse, jsonError } from '@/lib/server/http';
-import { transcribe } from '@/lib/server/speaches';
-import { logTiming, ms, startTimer } from '@/lib/server/timing';
+import { isConfigured } from '@/lib/server/env';
+import { errorResponse, jsonError, notConfigured, readBodyLimited } from '@/lib/server/http';
+import { withRequestLog } from '@/lib/server/log';
+import { serverSpeech } from '@/lib/server/speaches';
 
 export const maxDuration = 60;
 
 const MAX_AUDIO_BYTES = 2 * 1024 * 1024; // ~65 s of 16 kHz 16-bit mono; clips are capped at 30 s
-const FALLBACK_LANG = 'ko' as const;
+/** The clip plus the form's other fields and boundaries. */
+const MAX_BODY_BYTES = MAX_AUDIO_BYTES + 64 * 1024;
 
-const fieldsSchema = z.object({
-  language: z.enum([...LANG_CODES, 'auto']).default('auto'),
-  prompt: z.string().max(200).optional(),
-});
-
-export async function POST(request: Request) {
-  const elapsed = startTimer();
+export const POST = withRequestLog('transcribe', async (request, log) => {
   let audioBytes: number | undefined;
   try {
     const denied = checkAccess(request);
     if (denied) return denied;
+    if (!isConfigured('speaches')) return notConfigured('speaches');
 
+    const body = await readBodyLimited(request, MAX_BODY_BYTES);
+    if (!body) return jsonError('payload_too_large', 'Audio clip is larger than 2 MB.');
     let form: FormData;
     try {
-      form = await request.formData();
+      const contentType = request.headers.get('content-type') ?? '';
+      form = await new Response(body, { headers: { 'Content-Type': contentType } }).formData();
     } catch {
       return jsonError('bad_request', 'Expected multipart/form-data.');
     }
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
       return jsonError('payload_too_large', 'Audio clip is larger than 2 MB.');
     }
 
-    const fields = fieldsSchema.safeParse({
+    const fields = transcribeFieldsSchema.safeParse({
       language: form.get('language') ?? undefined,
       prompt: form.get('prompt') || undefined,
     });
@@ -47,36 +48,40 @@ export async function POST(request: Request) {
     const { language, prompt } = fields.data;
     audioBytes = audio.size;
 
-    const forced = language === 'auto' ? undefined : language;
-    const firstCall = startTimer();
-    let result = await transcribe(audio, { language: forced, prompt, signal: request.signal });
-    const speachesMs = firstCall();
-    let fallbackMs: number | undefined;
-
-    // Whisper often mislabels short clips (e.g. "네.") as Japanese or similar.
-    // When auto-detect lands outside the supported set, retry once with the main language.
-    if (!forced && result.text !== '' && !isLang(result.language)) {
-      const retryCall = startTimer();
-      result = await transcribe(audio, { language: FALLBACK_LANG, prompt, signal: request.signal });
-      fallbackMs = retryCall();
-      result.language ??= FALLBACK_LANG;
+    // Only the clips the app records are accepted; Speaches gets them re-encoded unchanged.
+    let samples: Float32Array;
+    try {
+      samples = decodeWav(await audio.arrayBuffer());
+    } catch (err) {
+      if (err instanceof WavError) return jsonError('bad_request', err.message);
+      throw err;
     }
 
-    logTiming('transcribe', 'ok', {
-      speaches: ms(speachesMs),
-      fallback: ms(fallbackMs),
-      total: ms(elapsed()),
-      audio: ms(result.durationMs),
-      size: `${Math.round(audio.size / 1024)}KB`,
+    const { result, firstMs, fallbackMs } = await transcribeWithFallback(serverSpeech, samples, {
+      language,
+      prompt,
+      signal: request.signal,
+    });
+
+    log.done('ok', {
+      speachesMs: firstMs,
+      fallbackMs,
+      audioMs: result.durationMs,
+      sizeKb: Math.round(audio.size / 1024),
       lang: result.language ?? 'none',
-      mode: forced ? 'forced' : 'auto',
+      mode: language === 'auto' ? 'auto' : 'forced',
     });
     return Response.json(result);
   } catch (err) {
-    logTiming('transcribe', request.signal.aborted ? 'aborted' : 'error', {
-      total: ms(elapsed()),
-      size: audioBytes === undefined ? undefined : `${Math.round(audioBytes / 1024)}KB`,
-    });
-    return errorResponse('transcribe', err);
+    const fields = {
+      sizeKb: audioBytes === undefined ? undefined : Math.round(audioBytes / 1024),
+    };
+    // The client went away (stopped, navigated); the cut-off upstream call isn't an error.
+    if (request.signal.aborted) {
+      log.done('aborted', fields);
+      return new Response(null, { status: 499 });
+    }
+    log.done('error', fields);
+    return errorResponse(log, err);
   }
-}
+});

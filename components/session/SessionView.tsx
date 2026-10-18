@@ -3,7 +3,7 @@
 import { AudioLines, Sparkles } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useLayoutEffect, useRef, useState } from 'react';
-import { selectColumns, useDisplayStore } from '@/lib/store/display-store';
+import { selectColumns, useDisplayStore } from '@/lib/display/store';
 import { LayoutToggle, TextSizeButton } from '../controls/DisplayButtons';
 import { LanguageMenu } from '../controls/LanguageMenu';
 import { RecordBar } from '../controls/RecordBar';

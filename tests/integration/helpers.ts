@@ -1,4 +1,5 @@
 import { HttpResponse } from 'msw';
+import { encodeWav } from '@/lib/audio/wav';
 
 export const SPEACHES = 'https://stt.test/v1';
 export const LLM = 'https://llm.test/v1';
@@ -44,6 +45,9 @@ export function chatJson(content: string): Response {
   });
 }
 
+/** A silent 16 kHz mono WAV of exactly `bytes` bytes (a spare odd byte trails the data). */
 export function wavBlob(bytes = 3200): Blob {
-  return new Blob([new Uint8Array(bytes)], { type: 'audio/wav' });
+  const wav = encodeWav(new Float32Array(Math.max(0, Math.floor((bytes - 44) / 2))));
+  const pad = Math.max(0, bytes - wav.size);
+  return new Blob([wav, new Uint8Array(pad)], { type: 'audio/wav' });
 }

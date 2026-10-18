@@ -1,3 +1,5 @@
+import { readJson, writeJson } from '@/lib/browser/storage';
+
 /**
  * User-tunable speech detection, remembered on this device. The sliders map to MicVAD options
  * and are applied live (MicVAD.setOptions), so tuning never restarts the microphone.
@@ -51,20 +53,11 @@ export function normalizeVadSettings(raw: unknown): VadSettings {
 }
 
 export function loadVadSettings(): VadSettings {
-  try {
-    const raw = localStorage.getItem(KEY);
-    return normalizeVadSettings(raw ? JSON.parse(raw) : null);
-  } catch {
-    return { ...DEFAULT_VAD_SETTINGS };
-  }
+  return readJson(KEY, normalizeVadSettings);
 }
 
 export function saveVadSettings(settings: VadSettings) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(normalizeVadSettings(settings)));
-  } catch {
-    // storage unavailable (private mode); the values just aren't remembered
-  }
+  writeJson(KEY, normalizeVadSettings(settings));
 }
 
 /** The MicVAD (vad-web 0.0.31) frame-processor options for these settings. */

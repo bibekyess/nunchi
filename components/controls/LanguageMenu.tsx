@@ -2,7 +2,7 @@
 
 import { ArrowLeftRight, ArrowRight } from 'lucide-react';
 import { MODE_PRESETS, modeId, PRIMARY_LANG } from '@/lib/pipeline/direction';
-import { useSessionStore } from '@/lib/store/session-store';
+import { useSessionStore } from '@/lib/session/store';
 import { cx, SELECT_PILL } from '../ui';
 
 /**

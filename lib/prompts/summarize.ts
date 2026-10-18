@@ -1,6 +1,7 @@
+import type { ChatMessage } from '@/lib/core/models';
 import { langName, type Lang } from '@/lib/languages';
 import type { GlossaryEntry } from '@/lib/types';
-import type { ChatMessage } from './translate';
+import { formatGlossary } from './glossary';
 
 /** Transcripts longer than this are summarized in parts, then the parts are merged. */
 export const CHUNK_CHARS = 24_000;
@@ -26,15 +27,6 @@ const SECTIONS = [
   '## Open questions',
   'Omit a section if it would be empty. Use glossary spellings for names.',
 ].join('\n');
-
-function glossaryText(glossary: GlossaryEntry[]): string {
-  const items = glossary
-    .filter((g) => g.term.trim())
-    .map((g) =>
-      g.translation?.trim() ? `${g.term.trim()} → ${g.translation.trim()}` : g.term.trim(),
-    );
-  return items.length ? items.join(', ') : '(none)';
-}
 
 function contextLine(meetingContext?: string): string {
   return meetingContext?.trim() ? `Meeting context: ${meetingContext.trim()}\n\n` : '';
@@ -83,7 +75,7 @@ export function buildSummarizeMessages(
     .filter(Boolean)
     .join('\n');
 
-  const user = `${contextLine(input.meetingContext)}Glossary: ${glossaryText(input.glossary)}\n\nTranscript (original => translation):\n${lines.join('\n')}`;
+  const user = `${contextLine(input.meetingContext)}Glossary: ${formatGlossary(input.glossary, ', ')}\n\nTranscript (original => translation):\n${lines.join('\n')}`;
 
   return [
     { role: 'system', content: system },
@@ -99,7 +91,7 @@ export function buildMergeMessages(input: SummarizePromptInput, partials: string
   ].join('\n');
 
   const parts = partials.map((p, i) => `### Part ${i + 1}\n${p.trim()}`).join('\n\n');
-  const user = `${contextLine(input.meetingContext)}Glossary: ${glossaryText(input.glossary)}\n\nPartial summaries:\n${parts}`;
+  const user = `${contextLine(input.meetingContext)}Glossary: ${formatGlossary(input.glossary, ', ')}\n\nPartial summaries:\n${parts}`;
 
   return [
     { role: 'system', content: system },

@@ -2,7 +2,7 @@
 
 import { Columns2 } from 'lucide-react';
 import { nextTextSize, TEXT_SIZE_NAMES, TEXT_SIZES } from '@/lib/display/view';
-import { useDisplayStore } from '@/lib/store/display-store';
+import { useDisplayStore } from '@/lib/display/store';
 import { cx, IconButton } from '../ui';
 
 /** Side-by-side columns (one per language). Only offered on wide screens. */

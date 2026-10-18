@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "dev:mock": "node --env-file=.env.mock node_modules/next/dist/bin/next dev",
+    "dev:mock": "node scripts/dev-mock.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -24,7 +24,6 @@
     "lucide-react": "^1.56.0",
     "next": "16.4.0",
     "onnxruntime-web": "^1.30.0",
-    "openai": "^7.32.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-markdown": "^10.1.0",

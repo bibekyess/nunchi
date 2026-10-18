@@ -9,6 +9,8 @@
 //                                      summary for summary prompts), preceded by an empty
 //                                      <think></think> block split across chunks, like Qwen3
 // Set MOCK_HEADER_NAME/MOCK_HEADER_VALUE to require the custom LLM auth header.
+// CORS is open (any origin, preflight answered), so the browser can call it directly as a
+// custom endpoint.
 // Set MOCK_LATENCY_MS to add delay (default 150).
 
 import http from 'node:http';
@@ -20,14 +22,13 @@ const HEADER_VALUE = process.env.MOCK_HEADER_VALUE;
 
 const KO_LINES = [
   '안녕하세요, 오늘 회의를 시작하겠습니다.',
-  '키로가 이번 밋업에 스폰서로 참여하게 됐습니다.',
+  '지민 님이 이번 릴리스 계획을 발표하겠습니다.',
   '번역 잘 되고 있나요?',
 ];
 const EN_LINES = ['Is the translation working well?', 'Thanks everyone for coming today.'];
 const TRANSLATIONS = {
   '안녕하세요, 오늘 회의를 시작하겠습니다.': "Hello, let's start today's meeting.",
-  '키로가 이번 밋업에 스폰서로 참여하게 됐습니다.':
-    'Kiro is participating in this meetup as a sponsor.',
+  '지민 님이 이번 릴리스 계획을 발표하겠습니다.': 'Jimin will present the plan for this release.',
   '번역 잘 되고 있나요?': 'Is the translation working well?',
   'Is the translation working well?': '번역 잘 되고 있나요?',
   'Thanks everyone for coming today.': '오늘 와 주셔서 모두 감사합니다.',
@@ -38,14 +39,14 @@ function mockSummary(user) {
   const lines = (user.match(/^\[\d+\] /gm) ?? []).length;
   return [
     '## Overview',
-    `The team opened the meeting and confirmed Kiro as a sponsor (${lines} lines).`,
+    `The team opened the meeting and Jimin presented the release plan (${lines} lines).`,
     '',
     '## Key points',
-    '- Kiro is sponsoring the meetup.',
+    '- Jimin presented the release plan.',
     '- Live translation is being checked.',
     '',
     '## Action items',
-    '- [ ] Kiro: confirm sponsorship details',
+    '- [ ] Jimin: share the release plan document',
   ].join('\n');
 }
 
@@ -71,9 +72,10 @@ function multipartField(body, name) {
 
 /** WAV duration from the data chunk size, assuming 16-bit mono. */
 function wavSeconds(body) {
-  const i = body.indexOf('data');
-  if (i === -1) return 0;
+  // Search after the fmt chunk: the multipart headers contain "form-data" too.
   const fmt = body.indexOf('fmt ');
+  const i = body.indexOf('data', Math.max(fmt, 0));
+  if (i === -1) return 0;
   const rate = fmt !== -1 ? body.readUInt32LE(fmt + 12) : 16000;
   return body.readUInt32LE(i + 4) / (rate * 2);
 }
@@ -87,9 +89,26 @@ const server = http.createServer((req, res) => {
   });
 });
 
+/** Lets any page call the mock straight from the browser (custom endpoint mode). */
+function allowCors(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin ?? '*');
+  res.setHeader('Vary', 'Origin');
+  if (req.method !== 'OPTIONS') return false;
+  res.writeHead(204, {
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    // Echo what the browser asks for: Authorization, Content-Type, the custom header.
+    'Access-Control-Allow-Headers':
+      req.headers['access-control-request-headers'] ?? 'authorization, content-type',
+    'Access-Control-Max-Age': '600',
+  });
+  res.end();
+  return true;
+}
+
 async function handle(req, res) {
   const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
   console.log(`[mock] ${req.method} ${url.pathname}`);
+  if (allowCors(req, res)) return;
   await sleep(LATENCY);
 
   if (req.method === 'GET' && url.pathname === '/v1/models') {

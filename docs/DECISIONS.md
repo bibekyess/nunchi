@@ -2,6 +2,245 @@
 
 Changes to, or details not covered by, the implementation plan. Newest first.
 
+## 2026-10-18 — Server logs
+
+`lib/server/log.ts` replaces the timing lines of `lib/server/timing.ts` with a small logger of
+our own (no dependency).
+
+- **Format:** JSON lines in production, for a log collector; readable lines otherwise, kept
+  close to the old ones (`[translate] ok open=120ms … rid=…`). `LOG_FORMAT` and `LOG_LEVEL`
+  override, read from `process.env` on each call so logging works while the env is invalid.
+  Durations are numbers named `…Ms` (`out` is `outChars`, `size` is `sizeKb`, summary `parts` is
+  `parts` + `partsMs`). Lines go through `console.debug/info/warn/error` by level.
+- **Request id:** the proxy's `x-request-id` when it looks like one (`[A-Za-z0-9._-]`, up to
+  128), else a UUID; logged as `rid` and sent back on every API response. A request that ends
+  without its timing line (a 401, a 400, health) gets one `response status=…` line: at info
+  when it failed, at debug when it succeeded so polling stays quiet.
+- **Explicit logger, not AsyncLocalStorage:** each route is `withRequestLog(route, (request,
+log) => …)`, and `log` is passed on to `streamText` and `errorResponse`. Easy to follow and
+  to test, with no hidden context to lose across streams. Next's route type check accepts the
+  wrapped `export const POST`.
+- **Secrets stay out:** upstream error bodies were logged as they came, and an upstream may
+  echo the auth header. Logged details now go through `redactSecrets` (this server's
+  `LLM_HEADER_VALUE`, `LLM_API_KEY`, `SPEACHES_API_KEY`, `APP_ACCESS_TOKEN`) and are cut to 500
+  characters (stacks to 2,000); fields whose key looks like a credential are dropped. The
+  logger never sees request headers or bodies.
+
+## 2026-10-18 — lib layout and hook convention
+
+`lib/` is grouped by what the code is for, so a file's folder says what it may depend on.
+Pure moves and import rewrites; no behavior changed.
+
+- **Root:** only `types.ts`, `errors.ts` and `languages.ts`, which nearly everything imports.
+- **Folders:** `api/` (route contract and shared zod schemas), `core/` (portable pipeline
+  logic, now including `think-stripper.ts`), `session/` (the controller, the session store and
+  `use-summary.ts`), `display/` (display store, view helpers, formatting), `browser/`
+  (localStorage helpers, wake lock, `waitForOnline`, theme and the inline theme script). `audio/`,
+  `db/`, `engines/`, `pipeline/`, `prompts/`, `server/`, `settings/` and `util/` are unchanged;
+  `lib/store/` is gone. `db/` stays separate from `session/`.
+- **Hooks stay with their domain** as `use-*.ts` (`settings/use-engine-settings.ts`,
+  `engines/use-engine-status.ts`, `session/use-summary.ts`); there is no `hooks/` folder. The
+  portable-imports lint rule bans `@/lib/**/use-*` and the stores (`@/lib/session/*`,
+  `@/lib/display/store`) from `lib/core`, `lib/util` and the pure settings.
+- **No barrels:** imports name the file (`@/lib/session/store`), with no `index.ts` or
+  re-export shims.
+
+## 2026-10-17 — Hardening before Phase 3
+
+An independent review of Phases 0–2 found long-running failure modes and a few structural
+issues that Phase 3 (workers, device models) would have inherited. Each fix below has a test
+that fails on the code before it. Server mode is unchanged otherwise: `pnpm smoke` against
+`pnpm mock`, the route probes and the server's log lines (timings aside) match Phase 2.
+
+- **Stalled streams time out.** `withIdleTimeout` (`lib/util/streams.ts`) wraps a stream and
+  throws a retryable timeout when the next piece takes too long, stopping the upstream. Limits:
+  OpenAI-compatible SSE streams allow the call's timeout for the first event (prompt
+  processing), then 30 s between events (`DEFAULT_STREAM_IDLE_MS`); the server engine's
+  streamed bodies 90 s (210 s for the summary's first piece); the server's `streamText` 90 s as
+  a backstop (210 s for the summary's first piece). Every `/api/*` call from the browser also
+  has an overall limit (`CALL_TIMEOUT_MS`: transcribe 90 s, translate 150 s, summary 20 min,
+  health 10 s), built on `AbortSignal.any` so a cancel is still an AbortError. Before, a
+  half-open connection held one of the queue's two slots for the rest of the session.
+- **Leaving mid-start closes the mic.** `SessionController.start()` checks a `disposed` flag
+  after every await and closes what it just opened; the queue ignores clips after dispose; the
+  25 s force-split doesn't restart detection that was paused or destroyed meanwhile (this also
+  ended an unhandled rejection).
+- **Dropped clips are really dropped.** Each transcription job has its own AbortController,
+  cancelled when the 50-clip cap evicts its clip. The audio is looked up when it is sent, so a
+  waiting job doesn't hold it, and a dropped line keeps its "Dropped" error instead of being
+  transcribed once back online. `waitForOnline` (`lib/browser/online.ts`) takes the job's signal
+  and removes its listener when cancelled.
+- **The speech model takes samples.** `SpeechModel.transcribe(audio: Float32Array)`; HTTP
+  models encode the WAV. `/api/transcribe` decodes the upload with `decodeWav` (16 kHz mono
+  16-bit PCM only; anything else is a 400) and Speaches gets it re-encoded byte for byte: the
+  decoder returns the middle of each step `encodeWav` truncates to, since a plain `v / 32767`
+  loses a step on about half the values once stored as float32. Chosen over keeping a Blob
+  path so `transcribeWithFallback` is the same code for every engine, including Phase 3's
+  Whisper worker. Speaches transcription uses the shared client; errors go through
+  `toUpstreamError(err, 'speaches')`.
+- **Semaphore:** a freed slot passes straight to the next waiter (FIFO). Before, a call
+  arriving in between could take it and run alongside the waiter, over the limit.
+- **One endpoint client** (`endpointClient(config, kind)`) for the engines and Test
+  connection, and one exported `hostOf`.
+- **One endpoint validator:** `endpointIssues()` returns `{ field, message }[]` for the dialog,
+  the engines and saving. A custom header name with a space (or a name without a value) now
+  blocks saving with a message, instead of being dropped on save and failing later with a 401.
+  The dialog shows the first issue and marks every field that has one.
+- **Settings split:** `lib/settings/engine-settings.ts` is pure (no React, stores or
+  import-time listeners; plain `includes` instead of zod), so a worker can use it;
+  `use-engine-settings.ts` has the zustand store, hooks and the cross-tab listener.
+- **Layering:** engine and task names live in `lib/engines/ids.ts`, which imports nothing, so
+  `lib/types`, `lib/errors` and `lib/core` no longer depend on the engines layer, and there are
+  no import cycles. ESLint's `no-restricted-imports` keeps `lib/core`, `lib/util` and the pure
+  settings free of React, Next, zustand, stores, settings hooks, server-only code, components
+  and the engines (except `ids`).
+- **Request limits:** bodies are read with a cap, refused from `Content-Length` before
+  reading or as soon as a streamed body passes it: 2 MB + 64 KB for a clip, 1 MB for a
+  translation, 2 MB for a summary. A summary's transcript is capped at 300,000 characters
+  (`SUMMARY_MAX_CHARS`): a two-hour meeting is about 180,000, so this allows roughly three
+  hours of dense talk, at most ~13 parts, instead of hundreds of LLM calls.
+- **Config checked at boot:** `instrumentation.ts` validates the environment once when the
+  server starts. An invalid one prints the usual "Invalid server environment" message and
+  exits, since Next alone logs it and keeps serving 500s. A production server with upstreams
+  but no `APP_ACCESS_TOKEN` logs a warning. Builds skip the check (`NEXT_PHASE`), so they still
+  need no secrets.
+- **429 from `/api/*`** is a retryable `upstream` error, as in the endpoint client (it was
+  `bad_request` yet retryable).
+- **Summary generation** moved from the `useSummary` hook into `generateSummary()`, which
+  reports and saves nothing once its signal aborts, so a superseded request whose engine
+  ignores the abort can't overwrite the newer summary.
+
+Left for Phase 3, where they belong next to the device engines (see `ENGINES-PLAN.md`): an
+engine factory table with `prepare`/`dispose`, a richer status with download progress and
+`subscribe`, `needsNetwork` as a function, a GPU scheduler, device settings, and
+`navigator.locks`. Skipped for now: storing the recent-list preview on the session and the
+banner's per-update failed count; neither matters at today's sizes.
+
+## 2026-10-17 — Engines Phase 2
+
+**Custom** endpoints work: each task can run on an OpenAI-compatible server that the browser
+calls directly. Server mode is unchanged: `pnpm smoke` against `pnpm mock`, a set of route
+probes and the server's log lines (timings aside) match Phase 1.
+
+- **One shared client** (`lib/core/openai-compatible.ts`): fetch only, so the browser and the
+  server use the same code. `ChatModel` (streamed and plain `/chat/completions`), `SpeechModel`
+  (`/audio/transcriptions`, `verbose_json`) and `listModels()`. A small SSE parser handles
+  events split across chunks, CRLF/CR, comments and `[DONE]`; an `error` event mid-stream fails
+  the stream. The timeout covers the wait for the response to start, as the OpenAI SDK did.
+  Failures are `EndpointError` (an `EngineError`): `network` (fetch rejected without a status:
+  DNS, refused, CORS and mixed content look the same to a page), `auth` (401/403), `timeout`,
+  `upstream` (429, 5xx, a broken stream, non-JSON) or `bad_request`. The message is safe to
+  show; the server's response body is kept apart as `detail` for logs.
+- **The server's LLM uses it too; the `openai` package is gone.** Same behavior: vLLM's
+  `chat_template_kwargs`, the custom header, `Bearer LLM_API_KEY` (or `none`), 60 s (180 s for
+  summaries), no automatic retries, abort on disconnect, `pingLlm` via `GET /models`.
+  `toUpstreamError` logs `detail`, so upstream bodies still reach the server log and never the
+  client. The Speaches client reuses the shared transcription parser.
+- **Settings** (`nunchi.engines`) become `{ choice, endpoints }`: one speech endpoint plus
+  translation and summary configs (URL, model, API key, optional header, disable-thinking).
+  The summary uses the translation endpoint unless "Same as translation" is off. The Phase 1
+  flat choice loads as `choice`. Only http(s) URLs are kept (trailing slashes dropped); a
+  header name must be a valid token, and line breaks are stripped from secrets. Keys stay in
+  this browser's localStorage, next to the other per-device settings, with a note in the
+  dialog saying so.
+- **Endpoint engines** (`lib/engines/endpoint.ts`) run the same `lib/core` logic as the server
+  routes (Korean fallback for unsupported detected languages, empty-answer retry, chunked
+  summaries), WAV-encoding clips themselves. They never call `/api/*`. `needsNetwork` is false
+  only for `localhost`, `127.0.0.1` and `[::1]`, so local servers keep working offline. An
+  unfilled endpoint fails without retrying; a refused key says to check Processing settings and
+  never opens the app passcode banner. Status is `GET /models` (5 s).
+- **Processing dialog:** Custom opens a form per task: quick-fill presets (Speaches, Ollama,
+  LM Studio), URL, model (suggestions from `/models`), API key (`type="password"`), and under
+  More options a custom header and vLLM's disable-thinking switch. While translation is Custom,
+  the summary offers "Same as translation" (on by default); otherwise the summary's form edits
+  the endpoint it will use. Save is blocked, with the reason, while a chosen endpoint has no
+  valid URL or model. Status badges follow the draft after typing pauses (0.7 s).
+- **Test connection** (`lib/engines/endpoint-check.ts`): `/models`, then for chat a 1-token
+  answer (60 s, as a local model may need to load). A failed request is told apart with a
+  `no-cors` probe: if that gets through, the server is up and CORS blocked it (hints for
+  Ollama, LM Studio, vLLM); if not, it's unreachable. Also: refused key, a URL without
+  `/models` ("usually ends in /v1"), missing model. Plain `http://` to another machine from an
+  `https://` page is flagged as mixed content without trying.
+- **Retries after switching engines** use whatever is chosen at retry time; "Retry all failed"
+  is the way to re-run failed lines on a new engine.
+- **The hallucination filter** keeps transcripts from servers without segment scores (plain
+  `json`, or missing `no_speech_prob` / `avg_logprob`); the text checks still apply.
+- **Tests:** the mock upstreams answer CORS preflights. A new e2e runs against a second app
+  server with no upstreams: all three tasks on Custom (the mock, with its auth header; a wrong
+  header is reported as a refused key), then a session and a summary with no `/api/*` call.
+
+## 2026-10-17 — Engines Phase 1
+
+Each task (speech to text, translation, summary) now runs on an engine chosen per device. Only
+the server engine exists; with the default choice (all server) the app behaves as before, and
+`pnpm smoke` against `pnpm mock` matches the Phase 0 output.
+
+- **Engines** (`lib/engines/types.ts`): `SpeechEngine`, `TranslateEngine`, `SummaryEngine`, each
+  with `id`, `needsNetwork` and `status()` (`ready` / `not_configured` / `unavailable` /
+  `error`, with `needsPasscode` for a missing passcode). The server engine
+  (`lib/engines/server.ts`, formerly `lib/api-client.ts`) encodes WAV itself, and its three
+  engines share one `/api/health` request (2 s cache, a failed check is not reused).
+- **Choice** (`lib/settings/engines.ts`): `{ speech, translate, summary }` under
+  `nunchi.engines`, validated per task with zod (bad values fall back to `server`), in a small
+  zustand store that follows other tabs through the `storage` event. `useEngineChoice()`
+  renders the default until hydration so server and client HTML match. Endpoint settings are
+  not stored yet; Phase 2 adds them.
+- **No silent fallback:** a choice of an engine that isn't built yet (`endpoint`, `device`)
+  gets a stand-in engine whose calls fail with an `unavailable` error that isn't retried.
+  Work never goes to the server instead, since someone who picked on-device processing may not
+  want their audio sent anywhere.
+- **The queue reads `getEngines()` for each line** (`QueueDeps.engines`), so a switch applies
+  from the next line, and waits for the network only when that line's engine needs it.
+  Summaries use the summary engine. `EngineError.engine` records which engine failed; only a
+  server `auth` error opens the passcode banner (`needsPasscode`).
+- **Optional upstreams:** `SPEACHES_BASE_URL` and `LLM_BASE_URL` + `LLM_MODEL` (set together)
+  may be empty. Routes for an unset service answer `503 not_configured` after the passcode
+  check, `/api/health` reports `not_configured` without pinging, and the client maps it to an
+  `unavailable` error that isn't retried.
+- **Processing dialog** (session ⋯ menu and a button in the home header): Server / Custom /
+  This device per task with a live status badge. Custom and This device are disabled with
+  "Coming soon"; Server is disabled for a task the server isn't set up for. Saved with Save,
+  like Audio. `SegmentedControl` options can be disabled (skipped by arrow keys, and the tab
+  stop moves to the first selectable option).
+- **Health label:** "Servers ready" when every task is on the server and ready; otherwise only
+  the tasks that need attention (e.g. "Speech not set up"), truncated on narrow phones, with
+  each task's engine and status in the tooltip. Warn tone for not set up / coming soon. The
+  offline banner only shows while a chosen engine needs the network.
+- **`Session.engines`** records the choice when listening starts or resumes, for later quality
+  comparisons. It isn't indexed, so the Dexie schema stays at version 1.
+- **Aborted transcriptions** are logged as `aborted` with an empty 499, like translate and
+  summarize, instead of `speaches upstream_error … ResponseAborted`.
+
+## 2026-10-17 — Engines Phase 0
+
+Cleanup before switchable engines (see `docs/ENGINES-PLAN.md`). No behavior change: API
+shapes, prompts, temperatures, timeouts, retries, log lines and storage keys are the same, and
+`pnpm smoke` plus extra route probes against `pnpm mock` matched the output from before.
+
+- **`lib/core/` holds the pipeline logic** that used to live in the route handlers:
+  `translate.ts` (prompt, `<think>` removal, one non-streamed retry on empty output),
+  `summarize.ts` (line formatting, parts two at a time, streamed merge) and `transcribe.ts`
+  (one Korean retry when auto-detect lands outside the supported set). It depends only on
+  `ChatModel` and `SpeechModel` from `lib/core/models.ts` and uses no Node- or DOM-only APIs,
+  so the browser can run it later with endpoint or on-device models.
+- **Server models:** `serverChat` (`lib/server/llm.ts`, OpenAI SDK, vLLM no-thinking flag) and
+  `serverSpeech` (`lib/server/speaches.ts`). A `start*` function opens the upstream stream
+  before the route answers, so connection errors still become JSON errors; timing stays in
+  the routes (`onPartsDone` reports summary parts).
+- **Routes are thin:** access check, `parseJsonBody`, core call, `streamText` (one place for
+  the plain-text stream, timing line and mid-stream errors). Request schemas shared in
+  `lib/api/schemas.ts`.
+- **Errors:** `EngineError { kind, retryable }` in `lib/errors.ts`; `ApiError` extends it with
+  the same retry rule (network, 408, 429, 5xx). The queue and summary check the kind, not the
+  HTTP client. The access-token header name lives there too, shared by client and server.
+- **The queue hands raw samples to `transcribe`.** WAV encoding moved into the server adapter in
+  `lib/session/controller.ts`; on-device engines will take the `Float32Array` as is.
+- **Smaller pieces:** one glossary formatter (`lib/prompts/glossary.ts`), one `Semaphore` /
+  `mapLimit` (`lib/util/concurrency.ts`), guarded localStorage helpers (`lib/browser/storage.ts`;
+  zustand `persist` and the inline theme script keep their own), summary generation in a
+  `useSummary` hook (`lib/session/use-summary.ts`), and `components/ui.tsx` split into
+  `components/ui/` with an `index.ts`, so `../ui` imports are unchanged.
+
 ## 2026-10-13 — Phase 3
 
 - **Scope cut to what helps follow a meeting:** on-device sessions, the recent list and the
@@ -78,8 +317,12 @@ Changes to, or details not covered by, the implementation plan. Newest first.
   page becoming visible again, restarts the recorder and shows a banner.
 - **Clips waiting for the network are capped at 50**; the oldest is dropped (shown as an error)
   beyond that.
-- **Passcode:** a 401 from any route shows an inline passcode field; the code is kept in
-  `localStorage` and sent as `x-nunchi-token`.
+- **Passcode:** a 401 from any route shows an inline passcode field. The passcode is exchanged
+  at `/api/unlock` for a 7-day HMAC-signed token (`<expiresAt>.<signature>`, keyed with
+  `APP_ACCESS_TOKEN`), and only that token is kept in `localStorage` and sent as
+  `x-nunchi-token`, so a shared computer never holds the passcode itself. Stateless: no token
+  store; rotating the passcode revokes every token. An expired token gets a 401 and the field
+  shows again.
 - **No shadcn yet:** a few local primitives (`components/ui.tsx`: buttons, native `<dialog>`) and a
   native `<select>` for the language menu, which is also the best picker on phones.
 - **`next start` with `output: 'standalone'`** prints a warning but works; the e2e test uses it.

@@ -3,7 +3,7 @@ import { buildTranslateMessages } from '@/lib/prompts/translate';
 
 describe('buildTranslateMessages', () => {
   const base = {
-    text: '키로 팀은 시애틀에 있습니다.',
+    text: '지민 팀은 시애틀에 있습니다.',
     sourceLang: 'ko' as const,
     targetLang: 'en' as const,
     context: [],
@@ -16,18 +16,18 @@ describe('buildTranslateMessages', () => {
     expect(system.content).toContain('from Korean to English');
     expect(system.content).toContain('(none)');
     expect(user.content).toContain('(start of meeting)');
-    expect(user.content.endsWith('CURRENT line:\n키로 팀은 시애틀에 있습니다.')).toBe(true);
+    expect(user.content.endsWith('CURRENT line:\n지민 팀은 시애틀에 있습니다.')).toBe(true);
   });
 
   it('includes glossary, context and meeting context', () => {
     const [system, user] = buildTranslateMessages({
       ...base,
-      glossary: [{ term: '키로', translation: 'Kiro' }, { term: 'AI Tinkerers' }, { term: '  ' }],
+      glossary: [{ term: '지민', translation: 'Jimin' }, { term: 'Nuri' }, { term: '  ' }],
       context: [{ source: '안녕하세요.', translation: 'Hello.' }],
-      meetingContext: 'AI Tinkerers Seoul meetup',
+      meetingContext: 'Weekly product sync',
     });
-    expect(system.content.startsWith('Meeting context: AI Tinkerers Seoul meetup')).toBe(true);
-    expect(system.content).toContain('키로 → Kiro\nAI Tinkerers');
+    expect(system.content.startsWith('Meeting context: Weekly product sync')).toBe(true);
+    expect(system.content).toContain('지민 → Jimin\nNuri');
     expect(system.content).not.toContain('(none)');
     expect(user.content).toContain('- 안녕하세요. => Hello.');
   });

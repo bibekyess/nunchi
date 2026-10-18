@@ -1,8 +1,16 @@
 import { create } from 'zustand';
 import { MODE_PRESETS } from '@/lib/pipeline/direction';
+import { readJson, writeJson } from '@/lib/browser/storage';
+import { ENGINE_TASKS, type EngineChoice } from '@/lib/engines/types';
 import type { GlossaryEntry, Lang, Session, TranslationMode, Utterance } from '@/lib/types';
 
 export type RecorderState = 'idle' | 'starting' | 'listening' | 'paused' | 'error';
+
+/**
+ * Why the session isn't being saved on this device: storage couldn't be opened at all
+ * (`unavailable`), or writes are failing and being retried (`failing`).
+ */
+export type SaveProblem = 'unavailable' | 'failing';
 
 export interface SessionState {
   session: Session | null;
@@ -22,6 +30,7 @@ export interface SessionState {
   /** The user stopped sharing the tab whose audio we were transcribing. */
   sharingStopped: boolean;
   needsAccessToken: boolean;
+  saveProblem: SaveProblem | null;
 
   // Session
   startSession: (id: string) => void;
@@ -31,6 +40,7 @@ export interface SessionState {
   setMode: (mode: TranslationMode) => void;
   setGlossary: (glossary: GlossaryEntry[], meetingContext?: string) => void;
   setSummary: (summary: string | undefined, summaryLang?: Lang) => void;
+  setSessionEngines: (engines: EngineChoice) => void;
 
   // Utterances. Every change goes through these two, so it can later be persisted (Phase 3)
   // and relayed to share viewers (Phase 5).
@@ -45,30 +55,22 @@ export interface SessionState {
   setInterrupted: (interrupted: boolean) => void;
   setSharingStopped: (stopped: boolean) => void;
   setNeedsAccessToken: (needs: boolean) => void;
+  setSaveProblem: (problem: SaveProblem | null) => void;
 }
 
 /** Remembered across sessions on this device: the last glossary pre-fills new sessions. */
 const LAST_GLOSSARY_KEY = 'nunchi.lastGlossary';
 
-function loadLastGlossary(): Pick<Session, 'glossary' | 'meetingContext'> {
-  try {
-    const raw = localStorage.getItem(LAST_GLOSSARY_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Pick<Session, 'glossary' | 'meetingContext'>;
-      if (Array.isArray(parsed.glossary)) return parsed;
-    }
-  } catch {
-    // ignore
-  }
-  return { glossary: [] };
+type LastGlossary = Pick<Session, 'glossary' | 'meetingContext'>;
+
+function loadLastGlossary(): LastGlossary {
+  return readJson(LAST_GLOSSARY_KEY, (raw) =>
+    raw && Array.isArray((raw as LastGlossary).glossary) ? (raw as LastGlossary) : { glossary: [] },
+  );
 }
 
-function saveLastGlossary(value: Pick<Session, 'glossary' | 'meetingContext'>) {
-  try {
-    localStorage.setItem(LAST_GLOSSARY_KEY, JSON.stringify(value));
-  } catch {
-    // ignore
-  }
+function saveLastGlossary(value: LastGlossary) {
+  writeJson(LAST_GLOSSARY_KEY, value);
 }
 
 export function defaultTitle(date = new Date()): string {
@@ -109,6 +111,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
   interrupted: false,
   sharingStopped: false,
   needsAccessToken: false,
+  saveProblem: null,
 
   startSession: (id) => {
     if (get().session?.id === id) return;
@@ -123,6 +126,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
       ids: [],
       byId: {},
       listenedMs: 0,
+      saveProblem: null,
       ...RESET_RECORDER,
     });
   },
@@ -134,6 +138,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
       ids: sorted.map((u) => u.id),
       byId: Object.fromEntries(sorted.map((u) => [u.id, u])),
       listenedMs: session.durationMs ?? 0,
+      saveProblem: null,
       ...RESET_RECORDER,
     });
   },
@@ -157,6 +162,15 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
           }
         : {},
     ),
+
+  setSessionEngines: (engines) =>
+    set((s) => {
+      if (!s.session) return {};
+      const current = s.session.engines;
+      // Unchanged: keep the session object, so nothing is saved again.
+      if (current && ENGINE_TASKS.every((t) => current[t] === engines[t])) return {};
+      return { session: { ...s.session, engines: { ...engines } } };
+    }),
 
   addUtterance: (u) =>
     set((s) => {
@@ -208,6 +222,9 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
   setInterrupted: (interrupted) => set({ interrupted }),
   setSharingStopped: (sharingStopped) => set({ sharingStopped }),
   setNeedsAccessToken: (needsAccessToken) => set({ needsAccessToken }),
+  setSaveProblem: (saveProblem) => {
+    if (get().saveProblem !== saveProblem) set({ saveProblem });
+  },
 }));
 
 /** Non-React access for the pipeline. */

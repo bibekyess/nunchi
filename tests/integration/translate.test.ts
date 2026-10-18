@@ -24,7 +24,7 @@ const body = {
   sourceLang: 'ko',
   targetLang: 'en',
   context: [{ source: '안녕하세요.', translation: 'Hello.' }],
-  glossary: [{ term: '키로', translation: 'Kiro' }],
+  glossary: [{ term: '지민', translation: 'Jimin' }],
 };
 
 function request(payload: unknown) {
@@ -67,7 +67,7 @@ describe('POST /api/translate', () => {
       chat_template_kwargs: { enable_thinking: false },
     });
     const messages = upstream?.messages as { role: string; content: string }[];
-    expect(messages[0].content).toContain('키로 → Kiro');
+    expect(messages[0].content).toContain('지민 → Jimin');
     expect(messages[1].content).toContain('- 안녕하세요. => Hello.');
   });
 
@@ -112,6 +112,54 @@ describe('POST /api/translate', () => {
     expect(text).toContain('upstream_error');
     expect(text).not.toContain('secret-value');
     spy.mockRestore();
+  });
+
+  it('calls the LLM once on a 5xx (the browser queue owns retries) and logs the body only', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let calls = 0;
+    let auth: string | null = null;
+    server.use(
+      http.post(`${LLM}/chat/completions`, ({ request }) => {
+        calls++;
+        auth = request.headers.get('authorization');
+        return HttpResponse.json({ error: { message: 'gpu oom' } }, { status: 503 });
+      }),
+    );
+    const res = await POST(request(body));
+    expect(res.status).toBe(502);
+    expect(await res.text()).not.toContain('gpu oom');
+    expect(calls).toBe(1);
+    // LLM_API_KEY is empty in the test env: the "none" placeholder is still sent.
+    expect(auth).toBe('Bearer none');
+    expect(spy.mock.calls.flat().join(' ')).toContain('gpu oom');
+    spy.mockRestore();
+  });
+
+  it('keeps the LLM credentials out of the JSON logs when an upstream echoes them', async () => {
+    vi.stubEnv('LOG_FORMAT', 'json');
+    const spies = (['debug', 'info', 'warn', 'error'] as const).map((level) =>
+      vi.spyOn(console, level).mockImplementation(() => {}),
+    );
+    server.use(
+      http.post(`${LLM}/chat/completions`, () =>
+        HttpResponse.json({ error: { message: 'bad header secret-value' } }, { status: 401 }),
+      ),
+    );
+    const res = await POST(request(body));
+    expect(res.status).toBe(502);
+
+    const lines = spies.flatMap((spy) => spy.mock.calls.map((c) => String(c[0])));
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) {
+      expect(JSON.parse(line)).toMatchObject({
+        route: 'translate',
+        rid: res.headers.get('x-request-id'),
+        level: expect.any(String),
+      });
+      expect(line).not.toContain('secret-value');
+    }
+    expect(lines.join('\n')).toContain('bad header [redacted]');
+    for (const spy of spies) spy.mockRestore();
   });
 
   it('validates the body', async () => {

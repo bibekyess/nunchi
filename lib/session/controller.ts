@@ -1,28 +1,22 @@
-import { transcribeClip, translateStream } from './api-client';
-import { MicError, saveDeviceId, savedDeviceId, savedNoiseSuppression } from './audio/devices';
+import { MicError, saveDeviceId, savedDeviceId, savedNoiseSuppression } from '@/lib/audio/devices';
 import {
   micEnded,
   openAudioInput,
   savedAudioSource,
   tabEnded,
   type AudioInput,
-} from './audio/sources';
-import { SpeechRecorder } from './audio/vad';
-import { loadVadSettings, type VadSettings } from './audio/vad-settings';
-import { encodeWav } from './audio/wav';
-import { PipelineQueue } from './pipeline/queue';
-import { sessionStore } from './store/session-store';
-import { ScreenWakeLock } from './wake-lock';
+} from '@/lib/audio/sources';
+import { SpeechRecorder } from '@/lib/audio/vad';
+import { loadVadSettings, type VadSettings } from '@/lib/audio/vad-settings';
+import { getEngines } from '@/lib/engines/registry';
+import { PipelineQueue } from '@/lib/pipeline/queue';
+import { getEngineChoice } from '@/lib/settings/use-engine-settings';
+import { sessionStore } from '@/lib/session/store';
+import { waitForOnline } from '@/lib/browser/online';
+import { ScreenWakeLock } from '@/lib/browser/wake-lock';
 
 /** If no audio frame arrives this long after the page becomes visible, the mic was cut. */
 const STALL_MS = 1500;
-
-function waitForOnline(): Promise<void> {
-  if (typeof navigator === 'undefined' || navigator.onLine) return Promise.resolve();
-  return new Promise((resolve) =>
-    window.addEventListener('online', () => resolve(), { once: true }),
-  );
-}
 
 /**
  * Owns everything with a lifetime outside React for one live session: the mic recorder,
@@ -34,14 +28,16 @@ export class SessionController {
   private input: AudioInput | null = null;
   private readonly wakeLock = new ScreenWakeLock();
   private lastFrameAt = 0;
+  /** Pending check that audio resumed after the page became visible. */
+  private stallTimer: ReturnType<typeof setTimeout> | null = null;
   private busy = false;
+  /** Set by dispose(); a start() still in progress checks it after every step. */
+  private disposed = false;
 
   constructor() {
     this.queue = new PipelineQueue({
       getState: sessionStore.getState,
-      encode: (audio) => encodeWav(audio),
-      transcribe: transcribeClip,
-      translate: translateStream,
+      engines: getEngines,
       newId: () => crypto.randomUUID(),
       sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
       waitForOnline,
@@ -54,7 +50,7 @@ export class SessionController {
   }
 
   async start() {
-    if (this.busy || this.recorder) return;
+    if (this.disposed || this.busy || this.recorder) return;
     this.busy = true;
     this.store.setRecorder('starting');
     try {
@@ -62,10 +58,15 @@ export class SessionController {
         deviceId: savedDeviceId(),
         noiseSuppression: savedNoiseSuppression(),
       });
+      if (this.disposed) {
+        // Left the page while the browser was opening the mic: close it again.
+        input.dispose();
+        return;
+      }
       for (const track of input.micTracks) track.addEventListener('ended', this.onMicEnded);
       for (const track of input.tabTracks) track.addEventListener('ended', this.onTabEnded);
       this.input = input;
-      this.recorder = await SpeechRecorder.create(input.stream, loadVadSettings(), {
+      const recorder = await SpeechRecorder.create(input.stream, loadVadSettings(), {
         onClip: (clip) => this.queue.enqueue(clip),
         onLevel: (level) => {
           this.lastFrameAt = performance.now();
@@ -73,14 +74,27 @@ export class SessionController {
         },
         onSpeaking: (speaking) => this.store.setSpeaking(speaking),
       });
-      await this.recorder.start();
+      if (this.disposed) {
+        // Left while speech detection was loading; dispose() already closed the input.
+        await recorder.destroy();
+        return;
+      }
+      this.recorder = recorder;
+      await recorder.start();
+      if (this.disposed) return; // dispose() destroyed the recorder
       this.lastFrameAt = performance.now();
       await this.wakeLock.acquire();
+      if (this.disposed) {
+        await this.wakeLock.release();
+        return;
+      }
       this.store.setSharingStopped(false);
+      this.store.setSessionEngines(getEngineChoice());
       this.store.setRecorder('listening');
     } catch (err) {
       this.recorder = null;
       this.closeInput();
+      if (this.disposed) return;
       if (err instanceof MicError && err.kind === 'cancelled') {
         // Closing the tab picker is a choice, not a failure.
         this.store.setRecorder('idle');
@@ -112,6 +126,7 @@ export class SessionController {
     await this.recorder.start();
     this.lastFrameAt = performance.now();
     await this.wakeLock.acquire();
+    this.store.setSessionEngines(getEngineChoice());
     this.store.setRecorder('listening');
   }
 
@@ -141,7 +156,9 @@ export class SessionController {
   }
 
   dispose() {
+    this.disposed = true;
     document.removeEventListener('visibilitychange', this.onVisibility);
+    this.clearStallTimer();
     void this.recorder?.destroy();
     this.recorder = null;
     this.closeInput();
@@ -164,6 +181,11 @@ export class SessionController {
     for (const track of input.micTracks) track.removeEventListener('ended', this.onMicEnded);
     for (const track of input.tabTracks) track.removeEventListener('ended', this.onTabEnded);
     input.dispose();
+  }
+
+  private clearStallTimer() {
+    if (this.stallTimer) clearTimeout(this.stallTimer);
+    this.stallTimer = null;
   }
 
   private inputEnded() {
@@ -205,7 +227,9 @@ export class SessionController {
       return;
     }
     const since = performance.now();
-    setTimeout(() => {
+    this.clearStallTimer();
+    this.stallTimer = setTimeout(() => {
+      this.stallTimer = null;
       // Mobile browsers can silently stop delivering audio while hidden.
       if (this.store.recorder === 'listening' && this.lastFrameAt < since) this.interrupted();
     }, STALL_MS);

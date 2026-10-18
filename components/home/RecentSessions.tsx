@@ -4,7 +4,12 @@ import { AudioLines, DatabaseZap, Ellipsis, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { deleteSession, listSessions, renameSession, type SessionSummary } from '@/lib/db/dexie';
-import { DATE_GROUP_LABELS, formatDateTime, formatElapsed, groupByDate } from '@/lib/format';
+import {
+  DATE_GROUP_LABELS,
+  formatDateTime,
+  formatElapsed,
+  groupByDate,
+} from '@/lib/display/format';
 import { Button, Dialog, IconButton, Input } from '../ui';
 import { Logo } from '../Logo';
 
@@ -19,18 +24,32 @@ function EditSessionDialog({
 }) {
   const [title, setTitle] = useState(item.session.title);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
 
-  const save = async () => {
+  /** Runs one write; on failure the dialog stays open and says so. */
+  const write = async (change: () => Promise<unknown>) => {
+    if (busy) return;
+    setBusy(true);
+    setFailed(false);
+    try {
+      await change();
+    } catch (err) {
+      console.error('[db] session change failed', err);
+      setFailed(true);
+      setBusy(false);
+      return;
+    }
+    onChanged();
+    onClose();
+  };
+  const save = () => {
     const clean = title.trim();
-    if (clean && clean !== item.session.title) await renameSession(item.session.id, clean);
-    onChanged();
-    onClose();
+    return write(async () => {
+      if (clean && clean !== item.session.title) await renameSession(item.session.id, clean);
+    });
   };
-  const remove = async () => {
-    await deleteSession(item.session.id);
-    onChanged();
-    onClose();
-  };
+  const remove = () => write(() => deleteSession(item.session.id));
 
   return (
     <Dialog
@@ -44,7 +63,7 @@ function EditSessionDialog({
             <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
               Cancel
             </Button>
-            <Button variant="danger" onClick={remove}>
+            <Button variant="danger" onClick={remove} disabled={busy}>
               <Trash2 className="h-4 w-4" aria-hidden />
               Delete
             </Button>
@@ -61,7 +80,7 @@ function EditSessionDialog({
             <Button variant="ghost" onClick={onClose}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={save}>
+            <Button variant="primary" onClick={save} disabled={busy}>
               Save
             </Button>
           </>
@@ -99,6 +118,11 @@ function EditSessionDialog({
             · {item.utteranceCount} lines
           </p>
         </div>
+      )}
+      {failed && (
+        <p role="alert" className="mt-3 text-sm text-danger-ink">
+          Couldn’t save the change: this browser is blocking on-device storage.
+        </p>
       )}
     </Dialog>
   );

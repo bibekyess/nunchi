@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, type TranslateRequest } from '@/lib/api-client';
-import { PipelineQueue, type QueueDeps } from '@/lib/pipeline/queue';
-import { sessionStore } from '@/lib/store/session-store';
+import { ApiError } from '@/lib/engines/server';
+import type { SpeechEngine, TranslateEngine, TranslateRequest } from '@/lib/engines/types';
+import { EngineError } from '@/lib/errors';
+import { MAX_PENDING_CLIPS, PipelineQueue, type QueueDeps } from '@/lib/pipeline/queue';
+import { sessionStore } from '@/lib/session/store';
 import type { TranscriptionResult } from '@/lib/types';
 
 function deferred<T>() {
@@ -26,20 +28,45 @@ const clip = (ms = 1500) => ({ audio: new Float32Array(16 * ms), startedAt: 0, d
 /** Lets queued promise chains run. */
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
+type Transcribe = SpeechEngine['transcribe'];
+type Translate = TranslateEngine['translate'];
+
+/** Queue deps with mock engines; `transcribe` / `translate` override what the engines do. */
+interface TestDeps extends QueueDeps {
+  transcribe: Transcribe;
+  translate: Translate;
+}
+
 let n = 0;
-function makeDeps(over: Partial<QueueDeps> = {}): QueueDeps {
-  return {
-    getState: sessionStore.getState,
-    encode: () => new Blob(['wav']),
-    transcribe: vi.fn(async () => tr('안녕하세요.')),
-    translate: vi.fn(async (_body: TranslateRequest, onDelta: (d: string) => void) => {
+function makeDeps(
+  over: Partial<Omit<QueueDeps, 'engines'>> & {
+    transcribe?: Transcribe;
+    translate?: Translate;
+    needsNetwork?: boolean;
+  } = {},
+): TestDeps {
+  const {
+    transcribe = vi.fn(async () => tr('안녕하세요.')),
+    translate = vi.fn(async (_body: TranslateRequest, onDelta: (d: string) => void) => {
       onDelta('Hello.');
       return 'Hello.';
     }),
+    needsNetwork = true,
+    ...rest
+  } = over;
+  const status = async () => ({ state: 'ready' as const });
+  return {
+    getState: sessionStore.getState,
+    engines: () => ({
+      speech: { id: 'server', needsNetwork, status, transcribe },
+      translate: { id: 'server', needsNetwork, status, translate },
+    }),
+    transcribe,
+    translate,
     newId: () => `u${n++}`,
     sleep: vi.fn(async () => {}),
     waitForOnline: async () => {},
-    ...over,
+    ...rest,
   };
 }
 
@@ -54,8 +81,10 @@ beforeEach(() => {
 
 describe('PipelineQueue', () => {
   it('adds a placeholder immediately, then fills in source and translation', async () => {
-    const q = new PipelineQueue(makeDeps());
-    const id = q.enqueue(clip());
+    const deps = makeDeps();
+    const q = new PipelineQueue(deps);
+    const c = clip();
+    const id = q.enqueue(c);
     expect(state().byId[id]).toMatchObject({ seq: 0, status: 'transcribing', durationMs: 1500 });
 
     await flush();
@@ -67,6 +96,11 @@ describe('PipelineQueue', () => {
       translation: 'Hello.',
     });
     expect(q.pendingClips).toBe(0); // audio discarded after transcription
+    // Engines get the raw samples and encode them as they need.
+    expect(deps.transcribe).toHaveBeenCalledWith(
+      c.audio,
+      expect.objectContaining({ language: 'auto' }),
+    );
   });
 
   it('keeps speech order when responses arrive out of order', async () => {
@@ -136,6 +170,41 @@ describe('PipelineQueue', () => {
     expect(state().byId[id]).toMatchObject({ status: 'done', sourceText: '다시' });
   });
 
+  it('retries every failed line from where it failed', async () => {
+    let speechDown = true;
+    let llmDown = true;
+    let sentence = 0;
+    const transcribe = vi.fn(async (): Promise<TranscriptionResult> => {
+      if (speechDown) throw new ApiError(400, 'bad_request', 'Speech failed.');
+      return tr(`문장 ${++sentence}.`); // distinct, so the repeat filter keeps them
+    });
+    const translate = vi.fn(async (_b: TranslateRequest, onDelta: (d: string) => void) => {
+      if (llmDown) throw new ApiError(400, 'bad_request', 'Translation failed.');
+      onDelta('Fine.');
+      return 'Fine.';
+    });
+    const q = new PipelineQueue(makeDeps({ transcribe, translate }));
+    speechDown = false;
+    const translateFailed = q.enqueue(clip()); // transcribes, then fails to translate
+    await flush();
+    speechDown = true;
+    const speechFailed = q.enqueue(clip()); // fails to transcribe
+    await flush();
+    expect(q.failedCount()).toBe(2);
+    expect(state().byId[translateFailed].error).toBe('Translation failed.');
+    expect(state().byId[speechFailed].error).toBe('Speech failed.');
+
+    speechDown = false;
+    llmDown = false;
+    transcribe.mockClear();
+    q.retryAllFailed();
+    await flush();
+    expect(q.failedCount()).toBe(0);
+    expect(transcribe).toHaveBeenCalledTimes(1); // only the line whose audio failed
+    expect(state().byId[translateFailed]).toMatchObject({ status: 'done', translation: 'Fine.' });
+    expect(state().byId[speechFailed]).toMatchObject({ status: 'done', translation: 'Fine.' });
+  });
+
   it('does not retry 4xx errors and flags a missing access token', async () => {
     const transcribe = vi.fn(async () => {
       throw new ApiError(401, 'unauthorized', 'Missing or wrong access token.');
@@ -173,7 +242,7 @@ describe('PipelineQueue', () => {
   });
 
   it('sends the five most recent finished lines as context, and the glossary', async () => {
-    state().setGlossary([{ term: '키로', translation: 'Kiro' }]);
+    state().setGlossary([{ term: '지민', translation: 'Jimin' }]);
     const bodies: TranslateRequest[] = [];
     const transcribe = vi.fn();
     for (let i = 0; i < 7; i++) transcribe.mockResolvedValueOnce(tr(`문장 ${i}`));
@@ -194,9 +263,9 @@ describe('PipelineQueue', () => {
       '문장 4',
       '문장 5',
     ]);
-    expect(last.glossary).toEqual([{ term: '키로', translation: 'Kiro' }]);
+    expect(last.glossary).toEqual([{ term: '지민', translation: 'Jimin' }]);
     // The Whisper prompt carries glossary terms and the previous sentence.
-    expect(transcribe.mock.calls.at(-1)?.[1]).toMatchObject({ prompt: '키로. 문장 5' });
+    expect(transcribe.mock.calls.at(-1)?.[1]).toMatchObject({ prompt: '지민. 문장 5' });
   });
 
   it('retries once at temperature 0 when the translation comes back untranslated', async () => {
@@ -235,6 +304,47 @@ describe('PipelineQueue', () => {
     expect(transcribe).toHaveBeenCalled();
   });
 
+  it('runs on-device engines while offline', async () => {
+    const transcribe = vi.fn(async () => tr('네.'));
+    const q = new PipelineQueue(
+      makeDeps({ transcribe, needsNetwork: false, waitForOnline: () => new Promise(() => {}) }),
+    );
+    const id = q.enqueue(clip());
+    await flush();
+    expect(transcribe).toHaveBeenCalled();
+    expect(state().byId[id].status).toBe('done');
+  });
+
+  it('uses the engines chosen when each line starts', async () => {
+    const first = vi.fn(async () => tr('하나.'));
+    const second = vi.fn(async () => tr('둘.'));
+    let current = first;
+    const deps = makeDeps();
+    const { speech, translate } = deps.engines();
+    deps.engines = () => ({ speech: { ...speech, transcribe: current }, translate });
+    const q = new PipelineQueue(deps);
+    q.enqueue(clip());
+    await flush();
+    current = second; // the user switched engines between two lines
+    q.enqueue(clip());
+    await flush();
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(ordered().map((u) => u.sourceText)).toEqual(['하나.', '둘.']);
+  });
+
+  it('asks for the passcode only when the server engine says so', async () => {
+    sessionStore.setState({ needsAccessToken: false });
+    const transcribe = vi.fn(async () => {
+      throw new EngineError('auth', 'Wrong API key.', { engine: 'endpoint' });
+    });
+    const q = new PipelineQueue(makeDeps({ transcribe }));
+    const id = q.enqueue(clip());
+    await flush();
+    expect(state().byId[id]).toMatchObject({ status: 'error', error: 'Wrong API key.' });
+    expect(state().needsAccessToken).toBe(false);
+  });
+
   it('stops updating the store after dispose', async () => {
     const gate = deferred<TranscriptionResult>();
     const q = new PipelineQueue(makeDeps({ transcribe: () => gate.promise }));
@@ -243,5 +353,61 @@ describe('PipelineQueue', () => {
     gate.resolve(tr('늦은 답'));
     await flush();
     expect(state().byId[id].status).toBe('transcribing');
+  });
+
+  // Review finding C: past the cap, the oldest waiting clips are dropped for real.
+  it('drops the oldest clips past the cap: never sent, error kept, audio let go', async () => {
+    const online = deferred<void>();
+    const transcribe = vi.fn(async () => tr('안녕하세요.'));
+    const q = new PipelineQueue(makeDeps({ transcribe, waitForOnline: () => online.promise }));
+    const clips = Array.from({ length: MAX_PENDING_CLIPS + 3 }, () => clip());
+    const ids = clips.map((c) => q.enqueue(c));
+    await flush();
+    expect(q.pendingClips).toBe(MAX_PENDING_CLIPS);
+
+    online.resolve(); // back online: the waiting jobs run
+    for (let i = 0; i < 40; i++) await flush();
+
+    const dropped = ids.slice(0, 3);
+    for (const id of dropped) {
+      expect(state().byId[id]).toMatchObject({
+        status: 'error',
+        error: 'Dropped: too many clips waiting for the network',
+      });
+    }
+    const sent = transcribe.mock.calls.map((call) => (call as unknown[])[0]);
+    for (const c of clips.slice(0, 3)) expect(sent).not.toContain(c.audio);
+    expect(transcribe).toHaveBeenCalledTimes(MAX_PENDING_CLIPS);
+    expect(state().byId[ids[3]].status).toBe('done');
+  });
+
+  // Review finding G: a job waiting for the network ends when the queue is disposed.
+  it('cancels the wait for the network on dispose', async () => {
+    const signals: (AbortSignal | undefined)[] = [];
+    const q = new PipelineQueue(
+      makeDeps({
+        waitForOnline: (signal?: AbortSignal) => {
+          signals.push(signal);
+          return new Promise<void>(() => {});
+        },
+      }),
+    );
+    q.enqueue(clip());
+    await flush();
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.aborted).toBe(false);
+    q.dispose();
+    expect(signals[0]?.aborted).toBe(true);
+  });
+
+  it('ignores clips that arrive after dispose', async () => {
+    const deps = makeDeps();
+    const q = new PipelineQueue(deps);
+    q.dispose();
+    q.enqueue(clip());
+    await flush();
+    expect(state().ids).toHaveLength(0);
+    expect(deps.transcribe).not.toHaveBeenCalled();
+    expect(q.pendingClips).toBe(0);
   });
 });

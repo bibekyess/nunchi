@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseTranscription } from '@/lib/core/openai-compatible';
 import { hallucinationReason } from '@/lib/pipeline/hallucinations';
 import type { TranscriptionResult } from '@/lib/types';
 
@@ -61,5 +62,25 @@ describe('hallucinationReason', () => {
     for (const text of ['네.', '아니요.', '맞아요.', 'Yes.']) {
       expect(hallucinationReason({ result: result(text), clipDurationMs: 500 })).toBeNull();
     }
+  });
+
+  describe('servers that report no confidence scores', () => {
+    it('keeps speech from a plain `json` answer (text only, no segments)', () => {
+      const plain = parseTranscription({ text: ' 회의를 시작하겠습니다. ' });
+      expect(hallucinationReason({ result: plain, clipDurationMs: 2500 })).toBeNull();
+      // The text checks still apply.
+      expect(
+        hallucinationReason({
+          result: parseTranscription({ text: '시청해주셔서 감사합니다' }),
+          clipDurationMs: 2500,
+        }),
+      ).toBe('filler');
+    });
+
+    it('keeps speech whose segments lack no_speech_prob and avg_logprob', () => {
+      const bare = parseTranscription({ text: '네', segments: [{ text: '네' }] });
+      expect(bare.segments).toEqual([{ text: '네', noSpeechProb: 0, avgLogprob: 0 }]);
+      expect(hallucinationReason({ result: bare, clipDurationMs: 600 })).toBeNull();
+    });
   });
 });

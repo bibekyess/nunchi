@@ -1,10 +1,13 @@
 import type { StoreApi } from 'zustand';
-import { elapsedMs, type SessionState } from '@/lib/store/session-store';
+import { elapsedMs, type SessionState } from '@/lib/session/store';
 import type { Session, Utterance, UtteranceStatus } from '@/lib/types';
-import { saveSession } from './dexie';
+import { saveSession, sessionStats, type SessionStats } from './dexie';
 
 /** Writes while a translation streams are batched this long. */
 export const STREAM_DEBOUNCE_MS = 1000;
+/** A failed write is tried again after this long, doubling up to the max while it keeps failing. */
+export const SAVE_RETRY_MS = 2000;
+export const SAVE_RETRY_MAX_MS = 30_000;
 
 const SETTLED: ReadonlySet<UtteranceStatus> = new Set(['done', 'skipped', 'error']);
 
@@ -23,7 +26,7 @@ export function recoverUtterance(u: Utterance): Utterance {
 }
 
 export interface PersistOptions {
-  save?: (session: Session, utterances: Utterance[]) => Promise<void>;
+  save?: (session: Session, utterances: Utterance[], stats: SessionStats) => Promise<void>;
   now?: () => number;
 }
 
@@ -43,6 +46,13 @@ export function persistSession(
   let timer: ReturnType<typeof setTimeout> | null = null;
   let chain: Promise<void> = Promise.resolve();
   let stopped = false;
+  let retryMs = SAVE_RETRY_MS;
+
+  /** Shows (or clears) the "not saved" notice, unless another session is open by now. */
+  const reportFailing = (failing: boolean) => {
+    const state = store.getState();
+    if (state.session?.id === sessionId) state.setSaveProblem(failing ? 'failing' : null);
+  };
 
   const flush = (): Promise<void> => {
     if (timer) clearTimeout(timer);
@@ -54,12 +64,31 @@ export function persistSession(
     if (!sessionDirty && dirty.size === 0) return chain;
     const session: Session = { ...state.session, durationMs: elapsedMs(state, now()) };
     const utterances = [...dirty].map((id) => state.byId[id]).filter(Boolean);
+    // The store holds every line of the session, so the list stats can be worked out here.
+    const stats = sessionStats(state.ids.map((id) => state.byId[id]));
     dirty.clear();
     sessionDirty = false;
     // Serialize writes so an older snapshot never lands after a newer one.
     chain = chain
-      .then(() => save(session, utterances))
-      .catch((err) => console.error('[db] save failed', err));
+      .then(() => save(session, utterances, stats))
+      .then(
+        () => {
+          retryMs = SAVE_RETRY_MS;
+          reportFailing(false);
+        },
+        (err) => {
+          console.error('[db] save failed', err);
+          reportFailing(true);
+          // Settled utterances never change again, so unless they are marked again they would
+          // never be written. The next write reads them from the store, so it saves the latest.
+          for (const u of utterances) dirty.add(u.id);
+          sessionDirty = true;
+          if (!stopped && !timer) {
+            timer = setTimeout(flush, retryMs);
+            retryMs = Math.min(retryMs * 2, SAVE_RETRY_MAX_MS);
+          }
+        },
+      );
     return chain;
   };
 

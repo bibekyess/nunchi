@@ -1,4 +1,5 @@
 import 'fake-indexeddb/auto';
+import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   deleteSession,
@@ -9,8 +10,15 @@ import {
   saveSession,
   setDb,
 } from '@/lib/db/dexie';
-import { persistSession, recoverUtterance, STREAM_DEBOUNCE_MS } from '@/lib/db/persist';
-import { sessionStore } from '@/lib/store/session-store';
+import { openSession } from '@/lib/db/open-session';
+import {
+  persistSession,
+  recoverUtterance,
+  SAVE_RETRY_MS,
+  STREAM_DEBOUNCE_MS,
+  type PersistOptions,
+} from '@/lib/db/persist';
+import { sessionStore } from '@/lib/session/store';
 import type { Session, Utterance } from '@/lib/types';
 
 const session = (id: string, createdAt = 1): Session => ({
@@ -33,6 +41,8 @@ const utt = (sessionId: string, seq: number, over: Partial<Utterance> = {}): Utt
   ...over,
 });
 
+type Save = NonNullable<PersistOptions['save']>;
+
 let n = 0;
 beforeEach(() => {
   setDb(new NunchiDB(`test-${n++}`));
@@ -49,6 +59,7 @@ describe('dexie storage', () => {
   });
 
   it('lists newest first with the first translated line', async () => {
+    // Saved without stats, as an older version did: the list reads the lines instead.
     await saveSession(session('old', 1), [
       utt('old', 0, { status: 'skipped', translation: undefined }),
       utt('old', 1),
@@ -58,6 +69,43 @@ describe('dexie storage', () => {
     expect(list.map((s) => s.session.id)).toEqual(['new', 'old']);
     expect(list[1]).toMatchObject({ preview: 'line 1', utteranceCount: 1 });
     expect(list[0]).toMatchObject({ preview: undefined, utteranceCount: 0 });
+  });
+
+  it('lists from the stats saved with the session', async () => {
+    // No lines are written, so the list can only have read the stats.
+    await saveSession(session('a'), [], { preview: 'Hello', lineCount: 12 });
+    expect(await listSessions()).toEqual([
+      { session: session('a'), preview: 'Hello', utteranceCount: 12 },
+    ]);
+  });
+
+  it('keeps the stats out of a loaded session', async () => {
+    await saveSession(session('a'), [utt('a', 0)], { preview: 'line 0', lineCount: 1 });
+    expect((await loadSession('a'))?.session).toEqual(session('a'));
+  });
+
+  it('fills in stats for sessions saved before they were stored', async () => {
+    const name = `test-${n++}`;
+    const old = new Dexie(name);
+    old.version(1).stores({
+      sessions: 'id, createdAt',
+      utterances: 'id, sessionId, [sessionId+seq]',
+    });
+    await old.table('sessions').bulkPut([session('a', 1), session('b', 2)]);
+    await old
+      .table('utterances')
+      .bulkPut([
+        utt('a', 1),
+        utt('a', 0, { status: 'skipped', translation: undefined }),
+        utt('a', 2, { status: 'error' }),
+      ]);
+    old.close();
+
+    const upgraded = new NunchiDB(name);
+    expect(await upgraded.sessions.get('a')).toMatchObject({ preview: 'line 1', lineCount: 2 });
+    expect(await upgraded.sessions.get('b')).toMatchObject({ lineCount: 0 });
+    expect((await upgraded.sessions.get('b'))?.preview).toBeUndefined();
+    upgraded.close();
   });
 
   it('renames and deletes', async () => {
@@ -99,7 +147,7 @@ describe('persistSession', () => {
   });
 
   it('writes nothing until the first utterance', async () => {
-    const save = vi.fn<(s: Session, u: Utterance[]) => Promise<void>>(async () => {});
+    const save = vi.fn<Save>(async () => {});
     stop = persistSession(sessionStore, { save });
     state().setTitle('Renamed');
     await vi.runAllTimersAsync();
@@ -108,11 +156,15 @@ describe('persistSession', () => {
     state().addUtterance(utt('live', 0, { status: 'transcribing' }));
     await vi.advanceTimersByTimeAsync(0);
     expect(save).toHaveBeenCalledTimes(1);
-    expect(save.mock.calls[0]).toMatchObject([{ id: 'live', title: 'Renamed' }, [{ seq: 0 }]]);
+    expect(save.mock.calls[0]).toMatchObject([
+      { id: 'live', title: 'Renamed' },
+      [{ seq: 0 }],
+      { lineCount: 1 },
+    ]);
   });
 
   it('debounces streaming deltas and writes settled utterances at once', async () => {
-    const save = vi.fn<(s: Session, u: Utterance[]) => Promise<void>>(async () => {});
+    const save = vi.fn<Save>(async () => {});
     state().addUtterance(utt('live', 0, { status: 'translating', translation: '' }));
     stop = persistSession(sessionStore, { save });
 
@@ -127,10 +179,11 @@ describe('persistSession', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(save).toHaveBeenCalledTimes(2);
     expect(save.mock.calls[1][1]).toMatchObject([{ status: 'done', translation: 'Hello' }]);
+    expect(save.mock.calls[1][2]).toEqual({ preview: 'Hello', lineCount: 1 });
   });
 
   it('saves listening time, including the current stretch', async () => {
-    const save = vi.fn<(s: Session, u: Utterance[]) => Promise<void>>(async () => {});
+    const save = vi.fn<Save>(async () => {});
     const now = 10_000;
     state().addUtterance(utt('live', 0));
     stop = persistSession(sessionStore, { save, now: () => now });
@@ -138,6 +191,42 @@ describe('persistSession', () => {
     state().setTitle('x');
     await vi.advanceTimersByTimeAsync(0);
     expect(save.mock.calls.at(-1)?.[0]).toMatchObject({ durationMs: 7000 });
+  });
+
+  it('writes again what a failed save left out', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const save = vi
+      .fn<(s: Session, u: Utterance[]) => Promise<void>>()
+      .mockRejectedValueOnce(new Error('QuotaExceededError'))
+      .mockResolvedValue(undefined);
+    stop = persistSession(sessionStore, { save });
+    state().addUtterance(utt('live', 0));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(save).toHaveBeenCalledTimes(1);
+
+    // The line is settled and won't change again: only the retry can save it.
+    await vi.advanceTimersByTimeAsync(SAVE_RETRY_MS);
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save.mock.calls[1][1]).toMatchObject([{ id: 'live-0', status: 'done' }]);
+    await vi.runAllTimersAsync();
+    expect(save).toHaveBeenCalledTimes(2);
+    vi.mocked(console.error).mockRestore();
+  });
+
+  it('shows that saving fails until a save works again', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const save = vi
+      .fn<(s: Session, u: Utterance[]) => Promise<void>>()
+      .mockRejectedValueOnce(new Error('QuotaExceededError'))
+      .mockResolvedValue(undefined);
+    stop = persistSession(sessionStore, { save });
+    state().addUtterance(utt('live', 0));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(state().saveProblem).toBe('failing');
+
+    await vi.advanceTimersByTimeAsync(SAVE_RETRY_MS);
+    expect(state().saveProblem).toBeNull();
+    vi.mocked(console.error).mockRestore();
   });
 
   it('end-to-end: a reloaded session matches what was recorded', async () => {
@@ -150,8 +239,56 @@ describe('persistSession', () => {
     stop = null;
     const loaded = await loadSession('live');
     expect(loaded?.utterances.map((u) => u.status)).toEqual(['done', 'translating']);
+    expect((await listSessions())[0]).toMatchObject({ preview: 'line 0', utteranceCount: 2 });
     state().hydrateSession(loaded!.session, loaded!.utterances.map(recoverUtterance));
     expect(state().ids).toEqual(['live-0', 'live-1']);
     expect(state().byId['live-1'].status).toBe('error');
+  });
+});
+
+describe('openSession', () => {
+  const state = () => sessionStore.getState();
+  const saved = (id: string) => ({ session: session(id), utterances: [utt(id, 0)] });
+
+  beforeEach(() => sessionStore.setState({ session: null, ids: [], byId: {} }));
+
+  it('loads a saved session, or starts a new one', async () => {
+    expect(
+      await openSession(sessionStore, 'a', new AbortController().signal, async () => saved('a')),
+    ).toEqual({ persist: true });
+    expect(state().session?.title).toBe('Meeting a');
+    expect(state().ids).toEqual(['a-0']);
+    expect(
+      await openSession(sessionStore, 'b', new AbortController().signal, async () => null),
+    ).toEqual({ persist: true });
+    expect(state().session?.id).toBe('b');
+    expect(state().ids).toEqual([]);
+  });
+
+  it('leaves the store alone when the user moved on before the load finished', async () => {
+    let finishA!: () => void;
+    const slowA = new Promise<void>((r) => (finishA = r));
+    const first = new AbortController();
+    const openingA = openSession(sessionStore, 'a', first.signal, async () => {
+      await slowA;
+      return saved('a');
+    });
+    first.abort(); // navigated to B
+    await openSession(sessionStore, 'b', new AbortController().signal, async () => saved('b'));
+    finishA();
+    expect(await openingA).toBeNull();
+    expect(state().session?.id).toBe('b');
+    expect(state().ids).toEqual(['b-0']);
+  });
+
+  it("doesn't save over a session it failed to load", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const opened = await openSession(sessionStore, 'a', new AbortController().signal, async () => {
+      throw new Error('blocked');
+    });
+    expect(opened).toEqual({ persist: false });
+    expect(state().session?.id).toBe('a');
+    expect(state().saveProblem).toBe('unavailable');
+    vi.mocked(console.error).mockRestore();
   });
 });
