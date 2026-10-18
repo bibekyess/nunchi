@@ -4,7 +4,13 @@ import { CircleAlert, CircleCheck, Laptop, Link, Loader2, Server } from 'lucide-
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { checkEndpoint, type EndpointCheck } from '@/lib/engines/endpoint-check';
 import { BUILT_ENGINES, ENGINE_LABELS } from '@/lib/engines/registry';
-import { ENGINE_IDS, ENGINE_TASKS, type EngineId, type EngineTask } from '@/lib/engines/types';
+import {
+  ENGINE_IDS,
+  ENGINE_TASKS,
+  isLocked,
+  type EngineId,
+  type EngineTask,
+} from '@/lib/engines/types';
 import { useEngineStatuses } from '@/lib/engines/use-engine-status';
 import {
   cleanBaseUrl,
@@ -19,6 +25,7 @@ import {
 } from '@/lib/settings/engine-settings';
 import { useEngineSettings } from '@/lib/settings/use-engine-settings';
 import { EngineStatusBadge } from '../EngineStatusBadge';
+import { PasscodeForm } from '../PasscodeForm';
 import { Badge, Button, cx, Dialog, SegmentedControl, Switch, type SegmentOption } from '../ui';
 import { EndpointFields } from './EndpointFields';
 
@@ -64,6 +71,10 @@ export function ProcessingDialog({ open, onClose }: { open: boolean; onClose: ()
   const server = useEngineStatuses(DEFAULT_ENGINE_CHOICE, savedEndpoints);
 
   const { choice, endpoints } = draft;
+  // One passcode unlocks the server for every task, so it is asked once, above them.
+  const askPasscode =
+    ENGINE_TASKS.some((t) => isLocked(server[t])) &&
+    ENGINE_TASKS.some((t) => choice[t] === 'server');
 
   /** What blocks saving a task's custom endpoint (none unless the task uses one). */
   const issuesFor = (task: EngineTask): EndpointIssue[] =>
@@ -154,6 +165,15 @@ export function ProcessingDialog({ open, onClose }: { open: boolean; onClose: ()
       <p className="text-sm text-ink-muted">
         Choose where each task runs. Saved on this device; changes apply from the next line.
       </p>
+
+      {askPasscode && (
+        <div className="mt-5 animate-fade-in rounded-2xl bg-surface-2 p-3.5">
+          <PasscodeForm id="processing-passcode" label="Server passcode" className="text-sm" />
+          <p className="mt-2 text-sm text-ink-muted">
+            Unlocks Server for every task. No passcode? Choose Custom instead.
+          </p>
+        </div>
+      )}
 
       {TASKS.map(({ task, title, hint }) => {
         const engine = choice[task];

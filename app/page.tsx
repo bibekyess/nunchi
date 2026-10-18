@@ -5,6 +5,7 @@ import { LangFlag } from '@/components/LangFlag';
 import { Logo } from '@/components/Logo';
 import { NewSessionButton } from '@/components/NewSessionButton';
 import { ProcessingButton } from '@/components/home/ProcessingButton';
+import { UnlockCard } from '@/components/home/UnlockCard';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 /** Entrance stagger: each block slides in a beat after the one above. */
@@ -55,6 +56,7 @@ export default function Home() {
       </section>
 
       <div className="animate-slide-up-in" style={enter(4)}>
+        <UnlockCard />
         <NewSessionButton />
       </div>
       <div className="mt-10 animate-slide-up-in" style={enter(5)}>

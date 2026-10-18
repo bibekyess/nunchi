@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { EndpointSettings, EngineChoice } from '@/lib/settings/engine-settings';
 import { buildEngines } from './registry';
+import { accessTokenVersion, subscribeAccessToken } from './server';
 import { ENGINE_TASKS, type EngineStatus, type EngineTask } from './types';
 
 export type EngineStatuses = Record<EngineTask, EngineStatus | null>;
@@ -12,8 +13,8 @@ export const STATUS_REFRESH_MS = 60_000;
 
 /**
  * Status of the engines for `choice` (custom ones as configured in `endpoints`), checked now,
- * every minute and whenever either changes. null while a check is pending. Server engines
- * share one /api/health request between them.
+ * every minute and whenever either (or the server passcode) changes. null while a check is
+ * pending. Server engines share one /api/health request between them.
  */
 export function useEngineStatuses(
   choice: EngineChoice,
@@ -23,6 +24,7 @@ export function useEngineStatuses(
   const { speech, translate, summary } = choice;
   // Compared by value: a new object with the same settings must not start another check.
   const endpointsKey = JSON.stringify(endpoints);
+  const tokenVersion = useSyncExternalStore(subscribeAccessToken, accessTokenVersion, () => 0);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -49,7 +51,7 @@ export function useEngineStatuses(
       abort.abort();
       clearInterval(timer);
     };
-  }, [speech, translate, summary, endpointsKey]);
+  }, [speech, translate, summary, endpointsKey, tokenVersion]);
 
   return statuses;
 }

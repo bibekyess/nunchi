@@ -18,6 +18,10 @@ export type EngineStatus =
   /** It should work but doesn't (server down, passcode needed). */
   | { state: 'error'; reason: string; needsPasscode?: boolean };
 
+/** Only the app server's passcode is missing; on-device and custom engines never ask for it. */
+export const isLocked = (status: EngineStatus | null): boolean =>
+  status?.state === 'error' && status.needsPasscode === true;
+
 interface EngineBase {
   readonly id: EngineId;
   /** Work waits for the connection while offline. False for on-device engines. */

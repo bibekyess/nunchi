@@ -1,12 +1,12 @@
 'use client';
 
 import { DatabaseZap, KeyRound, MonitorX, RotateCw, TriangleAlert, WifiOff, X } from 'lucide-react';
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useSyncExternalStore, type ReactNode } from 'react';
 import { needsNetwork } from '@/lib/engines/registry';
-import { setAccessToken } from '@/lib/engines/server';
 import { useEngineSettings } from '@/lib/settings/use-engine-settings';
 import { useSessionStore, type SaveProblem } from '@/lib/session/store';
-import { Button, cx, IconButton, Input } from '../ui';
+import { PasscodeForm } from '../PasscodeForm';
+import { Button, cx, IconButton } from '../ui';
 import { useController } from './controller-context';
 
 function subscribeOnline(cb: () => void) {
@@ -91,7 +91,6 @@ export function Banners() {
   );
   // On-device engines keep working offline; only warn when something waits for the network.
   const usesNetwork = useEngineSettings((s) => needsNetwork(s.choice, s.endpoints));
-  const [token, setToken] = useState('');
 
   // The interruption notice clears itself after a while; listening already restarted.
   useEffect(() => {
@@ -127,31 +126,16 @@ export function Banners() {
       )}
       {needsToken && (
         <Banner tone="accent" icon={<KeyRound />}>
-          <form
-            className="flex flex-1 flex-wrap items-center gap-x-3 gap-y-2 py-1"
-            onSubmit={(e) => {
-              e.preventDefault();
-              setAccessToken(token.trim());
+          <PasscodeForm
+            id="access-token"
+            label="Passcode required"
+            inline
+            className="flex-1 py-1"
+            onUnlocked={() => {
               setNeedsToken(false);
               controller.queue.retryAllFailed();
             }}
-          >
-            <label htmlFor="access-token" className="font-medium">
-              Passcode required
-            </label>
-            <div className="flex min-w-0 flex-1 basis-56 gap-2">
-              <Input
-                id="access-token"
-                type="password"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                className="min-w-0 flex-1"
-              />
-              <Button type="submit" variant="primary">
-                Save
-              </Button>
-            </div>
-          </form>
+          />
         </Banner>
       )}
       {failed > 0 && !needsToken && (

@@ -1,10 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ACCESS_TOKEN_HEADER } from '@/lib/errors';
 import {
+  accessTokenVersion,
   ApiError,
+  getAccessToken,
   resetServerHealth,
   serverSpeech,
   serverSummary,
   serverTranslate,
+  setAccessToken,
+  unlockServer,
 } from '@/lib/engines/server';
 
 const json = (body: unknown, status = 200) =>
@@ -82,5 +87,51 @@ describe('server engines', () => {
 
   it('needs the network', () => {
     expect([serverSpeech, serverTranslate, serverSummary].every((e) => e.needsNetwork)).toBe(true);
+  });
+});
+
+describe('unlockServer', () => {
+  beforeEach(() => {
+    const data = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => data.get(k) ?? null,
+      setItem: (k: string, v: string) => void data.set(k, v),
+      removeItem: (k: string) => void data.delete(k),
+    });
+  });
+
+  it('keeps a passcode the server accepts and checks the engines again', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(json({ error: { code: 'unauthorized', message: 'no' } }, 401))
+      .mockResolvedValueOnce(json({ speaches: 'ok', llm: 'ok' }))
+      .mockResolvedValueOnce(json({ speaches: 'ok', llm: 'ok' }));
+    vi.stubGlobal('fetch', fetch);
+    expect((await serverSpeech.status()).state).toBe('error');
+
+    const version = accessTokenVersion();
+    expect(await unlockServer('secret')).toBe('ok');
+    expect(getAccessToken()).toBe('secret');
+    expect(accessTokenVersion()).toBe(version + 1);
+    const init = fetch.mock.calls[1][1] as RequestInit;
+    expect((init.headers as Record<string, string>)[ACCESS_TOKEN_HEADER]).toBe('secret');
+    // The locked result is not reused after unlocking.
+    expect(await serverSpeech.status()).toEqual({ state: 'ready' });
+  });
+
+  it('reports a wrong passcode and keeps the old one', async () => {
+    setAccessToken('old');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => json({ error: { code: 'unauthorized', message: 'no' } }, 401)),
+    );
+    expect(await unlockServer('wrong')).toBe('wrong');
+    expect(getAccessToken()).toBe('old');
+  });
+
+  it('reports an unreachable server without keeping the passcode', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')));
+    expect(await unlockServer('secret')).toBe('unreachable');
+    expect(getAccessToken()).toBeNull();
   });
 });

@@ -1,10 +1,11 @@
 'use client';
 
 import { ENGINE_LABELS } from '@/lib/engines/registry';
-import { ENGINE_TASKS, type EngineStatus, type EngineTask } from '@/lib/engines/types';
+import { ENGINE_TASKS, isLocked, type EngineStatus, type EngineTask } from '@/lib/engines/types';
 import { useEngineStatuses } from '@/lib/engines/use-engine-status';
 import { useEndpointSettings, useEngineChoice } from '@/lib/settings/use-engine-settings';
 import { describeStatus } from './EngineStatusBadge';
+import { UNLOCK_INPUT_ID } from './home/UnlockCard';
 import { Badge, cx, type Tone } from './ui';
 
 const TASK_NAMES: Record<EngineTask, string> = {
@@ -27,12 +28,9 @@ function word(status: EngineStatus): string {
   }
 }
 
-/** Only the app server's passcode is missing; on-device and custom engines never ask for it. */
-const isLocked = (s: EngineStatus) => s.state === 'error' && s.needsPasscode === true;
-
 const LOCKED_HINT =
-  "The app's servers need a passcode. Enter it when you start a session, " +
-  'or choose on-device or your own engines in Processing settings.';
+  "The app's servers need a passcode. Enter it on the home page or in Processing settings, " +
+  'or switch to your own servers there.';
 
 /** Health of the engines chosen for each task (the app's servers by default). */
 export function HealthDot({ compact = false }: { compact?: boolean }) {
@@ -75,7 +73,7 @@ export function HealthDot({ compact = false }: { compact?: boolean }) {
     .join('\n');
 
   if (!compact) {
-    return (
+    const badge = (
       <Badge
         tone={tone}
         dot
@@ -87,6 +85,17 @@ export function HealthDot({ compact = false }: { compact?: boolean }) {
       >
         <span className="truncate">{label}</span>
       </Badge>
+    );
+    if (!list.some(isLocked)) return badge;
+    // Locked: the badge leads to the passcode field on the home page.
+    return (
+      <button
+        type="button"
+        onClick={() => document.getElementById(UNLOCK_INPUT_ID)?.focus()}
+        className="flex min-w-0 rounded-full focus-visible:ring-3 focus-visible:ring-accent/20 focus-visible:outline-none"
+      >
+        {badge}
+      </button>
     );
   }
 

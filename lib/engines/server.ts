@@ -30,9 +30,26 @@ export function getAccessToken(): string | null {
   return readString(TOKEN_KEY);
 }
 
+const tokenListeners = new Set<() => void>();
+let tokenVersion = 0;
+
 export function setAccessToken(token: string | null) {
   writeString(TOKEN_KEY, token || null);
+  // A health check made with the old passcode no longer applies.
+  health = null;
+  tokenVersion++;
+  tokenListeners.forEach((cb) => cb());
 }
+
+/** For useSyncExternalStore: the version changes whenever the passcode does. */
+export function subscribeAccessToken(cb: () => void) {
+  tokenListeners.add(cb);
+  return () => {
+    tokenListeners.delete(cb);
+  };
+}
+
+export const accessTokenVersion = () => tokenVersion;
 
 function authHeaders(): Record<string, string> {
   const token = getAccessToken();
@@ -288,6 +305,24 @@ function sharedHealth(): Promise<HealthStatus> {
     });
   }
   return health.result;
+}
+
+export type UnlockResult = 'ok' | 'wrong' | 'unreachable';
+
+/** Checks `token` against /api/health and keeps it only when the server accepts it. */
+export async function unlockServer(token: string): Promise<UnlockResult> {
+  try {
+    const call = await send(
+      API_PATHS.health,
+      { cache: 'no-store', headers: { [ACCESS_TOKEN_HEADER]: token } },
+      CALL_TIMEOUT_MS.health,
+    );
+    await readJson(call, healthStatusSchema);
+  } catch (err) {
+    return err instanceof EngineError && err.kind === 'auth' ? 'wrong' : 'unreachable';
+  }
+  setAccessToken(token);
+  return 'ok';
 }
 
 /** Test hook. */
