@@ -73,9 +73,10 @@ function multipartField(body, name) {
 
 /** WAV duration from the data chunk size, assuming 16-bit mono. */
 function wavSeconds(body) {
-  const i = body.indexOf('data');
-  if (i === -1) return 0;
+  // Search after the fmt chunk: the multipart headers contain "form-data" too.
   const fmt = body.indexOf('fmt ');
+  const i = body.indexOf('data', Math.max(fmt, 0));
+  if (i === -1) return 0;
   const rate = fmt !== -1 ? body.readUInt32LE(fmt + 12) : 16000;
   return body.readUInt32LE(i + 4) / (rate * 2);
 }

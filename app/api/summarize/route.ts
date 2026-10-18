@@ -44,19 +44,19 @@ export const POST = withRequestLog('summarize', async (request, log) => {
 
     // Open the upstream stream before answering, so failures become a JSON error.
     let run: SummaryRun;
-    let parts: number | undefined;
+    let partCount: number | undefined;
     let partsMs: number | undefined;
     try {
       run = await startSummary(serverChat, input, lines, {
         signal: request.signal,
         onPartsDone: (count, ms) => {
-          parts = count;
+          partCount = count;
           partsMs = ms;
         },
       });
     } catch (err) {
       if (request.signal.aborted) {
-        log.done('aborted', { parts, partsMs, lines: lines.length });
+        log.done('aborted', { partCount, partsMs, lines: lines.length });
         return new Response(null, { status: 499 });
       }
       throw toUpstreamError(err);
@@ -68,7 +68,7 @@ export const POST = withRequestLog('summarize', async (request, log) => {
       text: run.text,
       abort: run.abort,
       signal: request.signal,
-      fields: ({ ttftMs }) => ({ parts, partsMs, openMs, ttftMs, lines: lines.length }),
+      fields: ({ ttftMs }) => ({ partCount, partsMs, openMs, ttftMs, lines: lines.length }),
       okFields: (outChars) => ({ outChars }),
       // The merge prompt is long; its first piece may take the model's whole call timeout.
       firstMs: SUMMARY_TIMEOUT_MS + 30_000,
