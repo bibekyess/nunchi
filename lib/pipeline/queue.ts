@@ -1,7 +1,7 @@
 import type { Engines, TranslateRequest } from '@/lib/engines/types';
 import type { Clip } from '@/lib/audio/vad';
 import { EngineError } from '@/lib/errors';
-import type { SessionState } from '@/lib/store/session-store';
+import type { SessionState } from '@/lib/session/store';
 import type { TranscriptionResult, TranslationContextItem, Utterance } from '@/lib/types';
 import { Semaphore } from '@/lib/util/concurrency';
 import { pickDirection } from './direction';

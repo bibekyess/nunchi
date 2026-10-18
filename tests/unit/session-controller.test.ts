@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AudioInput } from '@/lib/audio/sources';
 import type { SpeechRecorder } from '@/lib/audio/vad';
-import { sessionStore } from '@/lib/store/session-store';
+import { sessionStore } from '@/lib/session/store';
 
 function deferred<T>() {
   let resolve!: (v: T) => void;
@@ -29,7 +29,7 @@ vi.mock('@/lib/audio/vad', () => ({
   SpeechRecorder: { create: mocks.createRecorder },
 }));
 
-const { SessionController } = await import('@/lib/session-controller');
+const { SessionController } = await import('@/lib/session/controller');
 
 function fakeInput(): AudioInput {
   return {

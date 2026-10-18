@@ -2,6 +2,25 @@
 
 Changes to, or details not covered by, the implementation plan. Newest first.
 
+## 2026-10-18 — lib layout and hook convention
+
+`lib/` is grouped by what the code is for, so a file's folder says what it may depend on.
+Pure moves and import rewrites; no behavior changed.
+
+- **Root:** only `types.ts`, `errors.ts` and `languages.ts`, which nearly everything imports.
+- **Folders:** `api/` (route contract and shared zod schemas), `core/` (portable pipeline
+  logic, now including `think-stripper.ts`), `session/` (the controller, the session store and
+  `use-summary.ts`), `display/` (display store, view helpers, formatting), `browser/`
+  (localStorage helpers, wake lock, `waitForOnline`, theme and the inline theme script). `audio/`,
+  `db/`, `engines/`, `pipeline/`, `prompts/`, `server/`, `settings/` and `util/` are unchanged;
+  `lib/store/` is gone. `db/` stays separate from `session/`.
+- **Hooks stay with their domain** as `use-*.ts` (`settings/use-engine-settings.ts`,
+  `engines/use-engine-status.ts`, `session/use-summary.ts`); there is no `hooks/` folder. The
+  portable-imports lint rule bans `@/lib/**/use-*` and the stores (`@/lib/session/*`,
+  `@/lib/display/store`) from `lib/core`, `lib/util` and the pure settings.
+- **No barrels:** imports name the file (`@/lib/session/store`), with no `index.ts` or
+  re-export shims.
+
 ## 2026-10-17 — Hardening before Phase 3
 
 An independent review of Phases 0–2 found long-running failure modes and a few structural
@@ -25,7 +44,7 @@ that fails on the code before it. Server mode is unchanged otherwise: `pnpm smok
 - **Dropped clips are really dropped.** Each transcription job has its own AbortController,
   cancelled when the 50-clip cap evicts its clip. The audio is looked up when it is sent, so a
   waiting job doesn't hold it, and a dropped line keeps its "Dropped" error instead of being
-  transcribed once back online. `waitForOnline` (`lib/util/online.ts`) takes the job's signal
+  transcribed once back online. `waitForOnline` (`lib/browser/online.ts`) takes the job's signal
   and removes its listener when cancelled.
 - **The speech model takes samples.** `SpeechModel.transcribe(audio: Float32Array)`; HTTP
   models encode the WAV. `/api/transcribe` decodes the upload with `decodeWav` (16 kHz mono
@@ -186,16 +205,16 @@ shapes, prompts, temperatures, timeouts, retries, log lines and storage keys are
   the routes (`onPartsDone` reports summary parts).
 - **Routes are thin:** access check, `parseJsonBody`, core call, `streamText` (one place for
   the plain-text stream, timing line and mid-stream errors). Request schemas shared in
-  `lib/schemas.ts`.
+  `lib/api/schemas.ts`.
 - **Errors:** `EngineError { kind, retryable }` in `lib/errors.ts`; `ApiError` extends it with
   the same retry rule (network, 408, 429, 5xx). The queue and summary check the kind, not the
   HTTP client. The access-token header name lives there too, shared by client and server.
 - **The queue hands raw samples to `transcribe`.** WAV encoding moved into the server adapter in
-  `session-controller.ts`; on-device engines will take the `Float32Array` as is.
+  `lib/session/controller.ts`; on-device engines will take the `Float32Array` as is.
 - **Smaller pieces:** one glossary formatter (`lib/prompts/glossary.ts`), one `Semaphore` /
-  `mapLimit` (`lib/util/concurrency.ts`), guarded localStorage helpers (`lib/storage.ts`;
+  `mapLimit` (`lib/util/concurrency.ts`), guarded localStorage helpers (`lib/browser/storage.ts`;
   zustand `persist` and the inline theme script keep their own), summary generation in a
-  `useSummary` hook (`lib/use-summary.ts`), and `components/ui.tsx` split into
+  `useSummary` hook (`lib/session/use-summary.ts`), and `components/ui.tsx` split into
   `components/ui/` with an `index.ts`, so `../ui` imports are unchanged.
 
 ## 2026-10-13 — Phase 3

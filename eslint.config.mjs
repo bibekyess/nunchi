@@ -24,12 +24,12 @@ const PORTABLE_IMPORTS = {
       group: [
         'server-only',
         '@/lib/server/*',
-        '@/lib/store/*',
-        '@/lib/settings/use-*',
+        '@/lib/session/*',
+        '@/lib/display/store',
+        '@/lib/**/use-*',
         '@/components/*',
       ],
-      message:
-        'Portable code must not import server-only modules, stores, settings hooks or components.',
+      message: 'Portable code must not import server-only modules, stores, hooks or components.',
     },
     {
       group: ['@/lib/engines/*', '!@/lib/engines/ids'],

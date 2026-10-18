@@ -3,7 +3,7 @@ import { ApiError } from '@/lib/engines/server';
 import type { SpeechEngine, TranslateEngine, TranslateRequest } from '@/lib/engines/types';
 import { EngineError } from '@/lib/errors';
 import { MAX_PENDING_CLIPS, PipelineQueue, type QueueDeps } from '@/lib/pipeline/queue';
-import { sessionStore } from '@/lib/store/session-store';
+import { sessionStore } from '@/lib/session/store';
 import type { TranscriptionResult } from '@/lib/types';
 
 function deferred<T>() {

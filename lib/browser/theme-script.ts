@@ -1,4 +1,4 @@
-// Server-safe theme constants (no React), shared by the root layout and lib/theme.ts.
+// Server-safe theme constants (no React), shared by the root layout and lib/browser/theme.ts.
 
 export type Theme = 'light' | 'dark';
 

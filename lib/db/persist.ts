@@ -1,5 +1,5 @@
 import type { StoreApi } from 'zustand';
-import { elapsedMs, type SessionState } from '@/lib/store/session-store';
+import { elapsedMs, type SessionState } from '@/lib/session/store';
 import type { Session, Utterance, UtteranceStatus } from '@/lib/types';
 import { saveSession, sessionStats, type SessionStats } from './dexie';
 

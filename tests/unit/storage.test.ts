@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readJson, readString, writeJson, writeString } from '@/lib/storage';
+import { readJson, readString, writeJson, writeString } from '@/lib/browser/storage';
 
 function memoryStorage() {
   const data = new Map<string, string>();

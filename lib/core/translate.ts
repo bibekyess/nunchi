@@ -1,5 +1,5 @@
 import { buildTranslateMessages, type TranslatePromptInput } from '@/lib/prompts/translate';
-import { ThinkStripper } from '@/lib/think-stripper';
+import { ThinkStripper } from '@/lib/core/think-stripper';
 import type { ChatModel } from './models';
 
 export const TRANSLATE_MAX_TOKENS = 400;

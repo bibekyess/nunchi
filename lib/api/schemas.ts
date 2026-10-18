@@ -1,6 +1,6 @@
 // Validation shared by the API routes and (later) client-side settings. Client-safe.
 import { z } from 'zod';
-import { LANG_CODES } from './languages';
+import { LANG_CODES } from '@/lib/languages';
 
 export const langSchema = z.enum(LANG_CODES);
 

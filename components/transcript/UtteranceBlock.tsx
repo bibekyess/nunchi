@@ -4,8 +4,8 @@ import { CircleAlert, Check, Copy, RotateCw } from 'lucide-react';
 import { memo, useEffect, useRef, useState, type AnimationEvent, type MouseEvent } from 'react';
 import { visibleParts } from '@/lib/display/view';
 import { LANG_CODES, type Lang } from '@/lib/languages';
-import { selectColumns, useDisplayStore } from '@/lib/store/display-store';
-import { useSessionStore } from '@/lib/store/session-store';
+import { selectColumns, useDisplayStore } from '@/lib/display/store';
+import { useSessionStore } from '@/lib/session/store';
 import { useController } from '../session/controller-context';
 import { Button, cx, IconButton } from '../ui';
 

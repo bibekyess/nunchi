@@ -10,7 +10,7 @@ import {
 } from '@/lib/api/contract';
 import { encodeWav } from '@/lib/audio/wav';
 import { ACCESS_TOKEN_HEADER, EngineError, type EngineErrorKind } from '@/lib/errors';
-import { readString, writeString } from '@/lib/storage';
+import { readString, writeString } from '@/lib/browser/storage';
 import type { TranscriptionResult } from '@/lib/types';
 import { withIdleTimeout } from '@/lib/util/streams';
 import type {

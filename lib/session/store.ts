@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { MODE_PRESETS } from '@/lib/pipeline/direction';
-import { readJson, writeJson } from '@/lib/storage';
+import { readJson, writeJson } from '@/lib/browser/storage';
 import { ENGINE_TASKS, type EngineChoice } from '@/lib/engines/types';
 import type { GlossaryEntry, Lang, Session, TranslationMode, Utterance } from '@/lib/types';
 

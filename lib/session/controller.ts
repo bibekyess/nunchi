@@ -1,19 +1,19 @@
-import { MicError, saveDeviceId, savedDeviceId, savedNoiseSuppression } from './audio/devices';
+import { MicError, saveDeviceId, savedDeviceId, savedNoiseSuppression } from '@/lib/audio/devices';
 import {
   micEnded,
   openAudioInput,
   savedAudioSource,
   tabEnded,
   type AudioInput,
-} from './audio/sources';
-import { SpeechRecorder } from './audio/vad';
-import { loadVadSettings, type VadSettings } from './audio/vad-settings';
-import { getEngines } from './engines/registry';
-import { PipelineQueue } from './pipeline/queue';
-import { getEngineChoice } from './settings/use-engine-settings';
-import { sessionStore } from './store/session-store';
-import { waitForOnline } from './util/online';
-import { ScreenWakeLock } from './wake-lock';
+} from '@/lib/audio/sources';
+import { SpeechRecorder } from '@/lib/audio/vad';
+import { loadVadSettings, type VadSettings } from '@/lib/audio/vad-settings';
+import { getEngines } from '@/lib/engines/registry';
+import { PipelineQueue } from '@/lib/pipeline/queue';
+import { getEngineChoice } from '@/lib/settings/use-engine-settings';
+import { sessionStore } from '@/lib/session/store';
+import { waitForOnline } from '@/lib/browser/online';
+import { ScreenWakeLock } from '@/lib/browser/wake-lock';
 
 /** If no audio frame arrives this long after the page becomes visible, the mic was cut. */
 const STALL_MS = 1500;

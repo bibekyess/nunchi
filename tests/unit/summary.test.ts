@@ -3,7 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SummaryEngine } from '@/lib/engines/types';
 import { EngineError } from '@/lib/errors';
-import { sessionStore } from '@/lib/store/session-store';
+import { sessionStore } from '@/lib/session/store';
 
 const engine = vi.hoisted(() => ({ summarize: vi.fn() }));
 
@@ -17,7 +17,7 @@ vi.mock('@/lib/engines/registry', () => ({
     }) satisfies SummaryEngine,
 }));
 
-const { generateSummary } = await import('@/lib/use-summary');
+const { generateSummary } = await import('@/lib/session/use-summary');
 
 type Summarize = SummaryEngine['summarize'];
 

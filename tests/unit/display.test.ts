@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { nextTextSize, visibleParts } from '@/lib/display/view';
-import { DEFAULT_DISPLAY, sanitizeDisplay } from '@/lib/store/display-store';
+import { DEFAULT_DISPLAY, sanitizeDisplay } from '@/lib/display/store';
 
 describe('visibleParts', () => {
   const koSpeaker = { sourceLang: 'ko', targetLang: 'en' } as const;

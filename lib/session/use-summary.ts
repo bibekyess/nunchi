@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getEngine } from '@/lib/engines/registry';
 import { EngineError } from '@/lib/errors';
 import type { Lang } from '@/lib/languages';
-import { sessionStore } from '@/lib/store/session-store';
+import { sessionStore } from '@/lib/session/store';
 
 /** Translated lines in speech order, as summary engines expect them. */
 function transcriptLines() {

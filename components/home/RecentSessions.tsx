@@ -4,7 +4,12 @@ import { AudioLines, DatabaseZap, Ellipsis, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { deleteSession, listSessions, renameSession, type SessionSummary } from '@/lib/db/dexie';
-import { DATE_GROUP_LABELS, formatDateTime, formatElapsed, groupByDate } from '@/lib/format';
+import {
+  DATE_GROUP_LABELS,
+  formatDateTime,
+  formatElapsed,
+  groupByDate,
+} from '@/lib/display/format';
 import { Button, Dialog, IconButton, Input } from '../ui';
 import { Logo } from '../Logo';
 

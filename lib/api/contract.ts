@@ -10,7 +10,7 @@ import {
   langSchema,
   meetingContextSchema,
   translationContextSchema,
-} from '@/lib/schemas';
+} from '@/lib/api/schemas';
 import type { TranscriptionResult } from '@/lib/types';
 
 export const API_PATHS = {

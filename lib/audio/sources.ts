@@ -1,4 +1,4 @@
-import { readString, writeString } from '@/lib/storage';
+import { readString, writeString } from '@/lib/browser/storage';
 import { MicError, openMicrophone } from './devices';
 
 /** Where speech comes from: the room (mic), a browser tab / the system, or both mixed. */

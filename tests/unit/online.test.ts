@@ -1,6 +1,6 @@
 // Review finding G: waiting for the network can be cancelled, and leaves no listener behind.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { waitForOnline } from '@/lib/util/online';
+import { waitForOnline } from '@/lib/browser/online';
 
 function stubBrowser(onLine: boolean) {
   const listeners = new Map<string, Set<() => void>>();

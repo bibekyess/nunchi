@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { THEME_INIT_SCRIPT } from '@/lib/theme-script';
+import { THEME_INIT_SCRIPT } from '@/lib/browser/theme-script';
 import './globals.css';
 
 export const metadata: Metadata = {

@@ -3,8 +3,8 @@
 import { ArrowDown, Mic } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { LANG_CODES, SUPPORTED_LANGS } from '@/lib/languages';
-import { selectColumns, useDisplayStore } from '@/lib/store/display-store';
-import { useSessionStore } from '@/lib/store/session-store';
+import { selectColumns, useDisplayStore } from '@/lib/display/store';
+import { useSessionStore } from '@/lib/session/store';
 import { LangFlag } from '../LangFlag';
 import { cx } from '../ui';
 import { UtteranceBlock } from './UtteranceBlock';

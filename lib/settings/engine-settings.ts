@@ -5,7 +5,7 @@
 // Per device, like the display preferences. Endpoint keys live here too: they never leave this
 // browser except in requests to the endpoint itself.
 import { ENGINE_IDS, ENGINE_TASKS, type EngineChoice, type EngineTask } from '@/lib/engines/ids';
-import { readJson, writeJson } from '@/lib/storage';
+import { readJson, writeJson } from '@/lib/browser/storage';
 
 export type { EngineChoice };
 

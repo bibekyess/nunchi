@@ -1,8 +1,8 @@
 import { useCallback, useSyncExternalStore } from 'react';
-import { readString, writeString } from './storage';
-import { isTheme, THEME_COLORS, THEME_STORAGE_KEY, type Theme } from './theme-script';
+import { readString, writeString } from '@/lib/browser/storage';
+import { isTheme, THEME_COLORS, THEME_STORAGE_KEY, type Theme } from '@/lib/browser/theme-script';
 
-export type { Theme } from './theme-script';
+export type { Theme } from '@/lib/browser/theme-script';
 
 /** The saved choice; with none yet, the OS preference. */
 export function readTheme(): Theme {

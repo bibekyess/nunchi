@@ -13,8 +13,8 @@ import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { isLang, LANG_CODES, SUPPORTED_LANGS, type Lang } from '@/lib/languages';
-import { useSessionStore } from '@/lib/store/session-store';
-import { useSummary } from '@/lib/use-summary';
+import { useSessionStore } from '@/lib/session/store';
+import { useSummary } from '@/lib/session/use-summary';
 import { LangFlag } from '../LangFlag';
 import { Button, Card, cx, SELECT_PILL } from '../ui';
 

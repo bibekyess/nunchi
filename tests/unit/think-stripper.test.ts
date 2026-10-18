@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { stripThink, ThinkStripper } from '@/lib/think-stripper';
+import { stripThink, ThinkStripper } from '@/lib/core/think-stripper';
 
 function streamThrough(chunks: string[]): string {
   const s = new ThinkStripper();

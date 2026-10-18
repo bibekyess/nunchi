@@ -1,7 +1,7 @@
 'use client';
 
 import { MicOff } from 'lucide-react';
-import { useSessionStore } from '@/lib/store/session-store';
+import { useSessionStore } from '@/lib/session/store';
 import { Button, Card } from '../ui';
 import { useController } from './controller-context';
 

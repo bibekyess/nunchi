@@ -1,4 +1,4 @@
-import { readString as read, writeString as write } from '@/lib/storage';
+import { readString as read, writeString as write } from '@/lib/browser/storage';
 
 const DEVICE_KEY = 'nunchi.inputDeviceId';
 const NOISE_KEY = 'nunchi.noiseSuppression';

@@ -1,7 +1,7 @@
 'use client';
 
 import { Loader2, Mic, Pause, Square } from 'lucide-react';
-import { useSessionStore } from '@/lib/store/session-store';
+import { useSessionStore } from '@/lib/session/store';
 import { useController } from '../session/controller-context';
 import { cx, IconButton } from '../ui';
 

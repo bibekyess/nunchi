@@ -1,5 +1,5 @@
 import type { StoreApi } from 'zustand';
-import type { SessionState } from '@/lib/store/session-store';
+import type { SessionState } from '@/lib/session/store';
 import { loadSession } from './dexie';
 import { recoverUtterance } from './persist';
 

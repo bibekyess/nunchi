@@ -18,7 +18,7 @@ import {
   STREAM_DEBOUNCE_MS,
   type PersistOptions,
 } from '@/lib/db/persist';
-import { sessionStore } from '@/lib/store/session-store';
+import { sessionStore } from '@/lib/session/store';
 import type { Session, Utterance } from '@/lib/types';
 
 const session = (id: string, createdAt = 1): Session => ({

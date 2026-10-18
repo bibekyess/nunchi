@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { loadSession, NunchiDB, saveSession, setDb } from '@/lib/db/dexie';
-import { sessionStore } from '@/lib/store/session-store';
+import { sessionStore } from '@/lib/session/store';
 
 const state = () => sessionStore.getState();
 

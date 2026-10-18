@@ -3,8 +3,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { openSession } from '@/lib/db/open-session';
 import { persistSession } from '@/lib/db/persist';
-import { SessionController } from '@/lib/session-controller';
-import { sessionStore, useSessionStore } from '@/lib/store/session-store';
+import { SessionController } from '@/lib/session/controller';
+import { sessionStore, useSessionStore } from '@/lib/session/store';
 
 const ControllerContext = createContext<SessionController | null>(null);
 

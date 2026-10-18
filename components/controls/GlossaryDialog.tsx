@@ -2,7 +2,7 @@
 
 import { ArrowRight, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { useSessionStore } from '@/lib/store/session-store';
+import { useSessionStore } from '@/lib/session/store';
 import type { GlossaryEntry } from '@/lib/types';
 import { Button, Dialog, IconButton, Input, Textarea } from '../ui';
 

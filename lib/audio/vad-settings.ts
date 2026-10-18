@@ -1,4 +1,4 @@
-import { readJson, writeJson } from '@/lib/storage';
+import { readJson, writeJson } from '@/lib/browser/storage';
 
 /**
  * User-tunable speech detection, remembered on this device. The sliders map to MicVAD options

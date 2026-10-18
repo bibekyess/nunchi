@@ -1,7 +1,7 @@
 'use client';
 
 import { Moon, Sun } from 'lucide-react';
-import { useTheme, type Theme } from '@/lib/theme';
+import { useTheme, type Theme } from '@/lib/browser/theme';
 import { MenuItem, SegmentedControl, type SegmentOption } from './ui';
 
 const ICON = 'h-4 w-4';

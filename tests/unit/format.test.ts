@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatElapsed, groupByDate } from '@/lib/format';
+import { formatElapsed, groupByDate } from '@/lib/display/format';
 
 describe('formatElapsed', () => {
   it('pads minutes and seconds, adds hours when needed', () => {

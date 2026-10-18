@@ -6,7 +6,7 @@ import {
   type SummarizePromptInput,
   type SummaryLine,
 } from '@/lib/prompts/summarize';
-import { ThinkStripper } from '@/lib/think-stripper';
+import { ThinkStripper } from '@/lib/core/think-stripper';
 import { mapLimit } from '@/lib/util/concurrency';
 import type { ChatMessage, ChatModel, ChatStream } from './models';
 

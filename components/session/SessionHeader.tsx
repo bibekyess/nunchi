@@ -3,8 +3,8 @@
 import { ChevronLeft, Pencil } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { formatElapsed } from '@/lib/format';
-import { elapsedMs, useSessionStore } from '@/lib/store/session-store';
+import { formatElapsed } from '@/lib/display/format';
+import { elapsedMs, useSessionStore } from '@/lib/session/store';
 import { HealthDot } from '../HealthDot';
 import { Badge } from '../ui';
 import { SessionMenu } from './SessionMenu';
