@@ -103,6 +103,35 @@ proxy such as nginx in front: browsers only allow the microphone over HTTPS (or 
 The env file is read at container start, never baked into the image. After editing it, run
 `docker compose up -d` again to recreate the container.
 
+The app sends its own security headers (a Content Security Policy, `Permissions-Policy`,
+`X-Frame-Options` and others; see `next.config.ts`). HSTS and rate limiting belong on the
+proxy, which terminates HTTPS. For example, in nginx:
+
+```nginx
+# In the http block: 10 API requests a second per client address.
+limit_req_zone $binary_remote_addr zone=nunchi_api:10m rate=10r/s;
+
+server {
+    listen 443 ssl;
+    server_name nunchi.example.com;
+    # ssl_certificate ... / ssl_certificate_key ...
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    client_max_body_size 3m; # transcribe clips are at most 2 MB
+
+    location /api/ {
+        # Slows down guessing APP_ACCESS_TOKEN; a live session sends a few requests a second.
+        limit_req zone=nunchi_api burst=40 nodelay;
+        proxy_pass http://127.0.0.1:9083;
+        proxy_buffering off; # translations and summaries stream
+        proxy_read_timeout 1200s; # long summaries
+    }
+    location / {
+        proxy_pass http://127.0.0.1:9083;
+    }
+}
+```
+
 The configuration is checked once when the server starts (`instrumentation.ts`): an invalid
 value stops it with an "Invalid server environment" message listing the problems, instead of
 failing every request later. In production, a missing `APP_ACCESS_TOKEN` logs a warning,
