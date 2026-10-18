@@ -4,7 +4,7 @@ import { CircleAlert, CircleCheck, Laptop, Link, Loader2, Server } from 'lucide-
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { checkEndpoint, type EndpointCheck } from '@/lib/engines/endpoint-check';
 import { BUILT_ENGINES, ENGINE_LABELS } from '@/lib/engines/registry';
-import { ENGINE_TASKS, type EngineId, type EngineTask } from '@/lib/engines/types';
+import { ENGINE_IDS, ENGINE_TASKS, type EngineId, type EngineTask } from '@/lib/engines/types';
 import { useEngineStatuses } from '@/lib/engines/use-engine-status';
 import {
   cleanBaseUrl,
@@ -35,8 +35,6 @@ const TASKS: { task: EngineTask; title: string; hint: string }[] = [
   { task: 'translate', title: 'Translation', hint: 'Translates each line as it arrives.' },
   { task: 'summary', title: 'Summary', hint: 'Writes the meeting summary.' },
 ];
-
-const ENGINE_ORDER: EngineId[] = ['server', 'endpoint', 'device'];
 
 /**
  * Which endpoint config a task's fields edit: the summary edits the translation endpoint while
@@ -72,7 +70,7 @@ export function ProcessingDialog({ open, onClose }: { open: boolean; onClose: ()
     choice[task] === 'endpoint' ? endpointIssues(endpoints[editedEndpoint(endpoints, task)]) : [];
 
   const options = (task: EngineTask): SegmentOption<EngineId>[] =>
-    ENGINE_ORDER.map((id) => {
+    ENGINE_IDS.map((id) => {
       const notSetUp = id === 'server' && server[task]?.state === 'not_configured';
       const built = BUILT_ENGINES.has(id);
       return {

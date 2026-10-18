@@ -1,7 +1,6 @@
-import { z } from 'zod';
+import { transcribeFieldsSchema } from '@/lib/api/contract';
 import { decodeWav, WavError } from '@/lib/audio/wav';
 import { transcribeWithFallback } from '@/lib/core/transcribe';
-import { langOrAutoSchema } from '@/lib/schemas';
 import { checkAccess } from '@/lib/server/auth';
 import { isConfigured } from '@/lib/server/env';
 import { errorResponse, jsonError, notConfigured, readBodyLimited } from '@/lib/server/http';
@@ -13,11 +12,6 @@ export const maxDuration = 60;
 const MAX_AUDIO_BYTES = 2 * 1024 * 1024; // ~65 s of 16 kHz 16-bit mono; clips are capped at 30 s
 /** The clip plus the form's other fields and boundaries. */
 const MAX_BODY_BYTES = MAX_AUDIO_BYTES + 64 * 1024;
-
-const fieldsSchema = z.object({
-  language: langOrAutoSchema.default('auto'),
-  prompt: z.string().max(200).optional(),
-});
 
 export async function POST(request: Request) {
   const elapsed = startTimer();
@@ -45,7 +39,7 @@ export async function POST(request: Request) {
       return jsonError('payload_too_large', 'Audio clip is larger than 2 MB.');
     }
 
-    const fields = fieldsSchema.safeParse({
+    const fields = transcribeFieldsSchema.safeParse({
       language: form.get('language') ?? undefined,
       prompt: form.get('prompt') || undefined,
     });

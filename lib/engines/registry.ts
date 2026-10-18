@@ -1,75 +1,58 @@
 import { EngineError } from '@/lib/errors';
-import {
-  endpointFor,
-  type EndpointSettings,
-  type EngineChoice,
-} from '@/lib/settings/engine-settings';
+import type { EndpointSettings, EngineChoice } from '@/lib/settings/engine-settings';
 import { getEndpointSettings, getEngineChoice } from '@/lib/settings/use-engine-settings';
-import { endpointSpeech, endpointSummary, endpointTranslate } from './endpoint';
-import { serverSpeech, serverSummary, serverTranslate } from './server';
+import { endpointProvider } from './endpoint';
+import { serverProvider } from './server';
 import {
+  ENGINE_IDS,
   ENGINE_TASKS,
   type EngineId,
+  type EngineProvider,
   type EngineStatus,
   type Engines,
   type EngineTask,
-  type SpeechEngine,
-  type SummaryEngine,
-  type TranslateEngine,
 } from './types';
-
-export const ENGINE_LABELS: Record<EngineId, string> = {
-  server: 'Server',
-  endpoint: 'Custom',
-  device: 'This device',
-};
-
-/** Engines that exist so far. The others are listed in settings as "coming soon". */
-export const BUILT_ENGINES: ReadonlySet<EngineId> = new Set<EngineId>(['server', 'endpoint']);
-
-const SERVER: Engines = {
-  speech: serverSpeech,
-  translate: serverTranslate,
-  summary: serverSummary,
-};
 
 /**
  * Stands in for an engine that isn't built yet (a choice saved by a newer version, or
  * edited by hand). Every call fails: work never quietly goes to the server instead, since
  * someone who picked on-device processing may not want their audio sent anywhere.
  */
-function notBuilt(id: EngineId) {
-  const message = `${ENGINE_LABELS[id]} processing isn't available yet. Choose Server in Processing settings.`;
-  const status = async (): Promise<EngineStatus> => ({
-    state: 'unavailable',
-    reason: 'Coming soon.',
-  });
+function comingSoonProvider(id: EngineId, label: string): EngineProvider {
+  const message = `${label} processing isn't available yet. Choose Server in Processing settings.`;
+  const base = {
+    id,
+    needsNetwork: false,
+    status: async (): Promise<EngineStatus> => ({ state: 'unavailable', reason: 'Coming soon.' }),
+  };
   const fail = async (): Promise<never> => {
     throw new EngineError('unavailable', message, { engine: id });
   };
-  return { id, needsNetwork: false, status, fail };
+  return {
+    id,
+    label,
+    built: false,
+    speech: () => ({ ...base, transcribe: fail }),
+    translate: () => ({ ...base, translate: fail }),
+    summary: () => ({ ...base, summarize: fail }),
+  };
 }
 
-function speechFor(id: EngineId, endpoints: EndpointSettings): SpeechEngine {
-  if (id === 'server') return SERVER.speech;
-  if (id === 'endpoint') return endpointSpeech(endpointFor(endpoints, 'speech'));
-  const { fail, ...base } = notBuilt(id);
-  return { ...base, transcribe: fail };
-}
+/** Every engine the user can pick, by id. A new engine is one entry here. */
+const PROVIDERS: Record<EngineId, EngineProvider> = {
+  server: serverProvider,
+  endpoint: endpointProvider,
+  device: comingSoonProvider('device', 'This device'),
+};
 
-function translateFor(id: EngineId, endpoints: EndpointSettings): TranslateEngine {
-  if (id === 'server') return SERVER.translate;
-  if (id === 'endpoint') return endpointTranslate(endpointFor(endpoints, 'translate'));
-  const { fail, ...base } = notBuilt(id);
-  return { ...base, translate: fail };
-}
+export const ENGINE_LABELS = Object.fromEntries(
+  ENGINE_IDS.map((id) => [id, PROVIDERS[id].label]),
+) as Record<EngineId, string>;
 
-function summaryFor(id: EngineId, endpoints: EndpointSettings): SummaryEngine {
-  if (id === 'server') return SERVER.summary;
-  if (id === 'endpoint') return endpointSummary(endpointFor(endpoints, 'summary'));
-  const { fail, ...base } = notBuilt(id);
-  return { ...base, summarize: fail };
-}
+/** Engines that exist so far. The others are listed in settings as "coming soon". */
+export const BUILT_ENGINES: ReadonlySet<EngineId> = new Set(
+  ENGINE_IDS.filter((id) => PROVIDERS[id].built),
+);
 
 /** The engines for a given choice of engine per task (endpoints default to the saved ones). */
 export function buildEngines(
@@ -77,9 +60,9 @@ export function buildEngines(
   endpoints: EndpointSettings = getEndpointSettings(),
 ): Engines {
   return {
-    speech: speechFor(choice.speech, endpoints),
-    translate: translateFor(choice.translate, endpoints),
-    summary: summaryFor(choice.summary, endpoints),
+    speech: PROVIDERS[choice.speech].speech(endpoints),
+    translate: PROVIDERS[choice.translate].translate(endpoints),
+    summary: PROVIDERS[choice.summary].summary(endpoints),
   };
 }
 

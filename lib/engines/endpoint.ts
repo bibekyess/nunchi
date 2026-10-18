@@ -16,8 +16,9 @@ import {
 import { transcribeWithFallback } from '@/lib/core/transcribe';
 import { runTranslation } from '@/lib/core/translate';
 import { EngineError } from '@/lib/errors';
-import { endpointProblem, type EndpointConfig } from '@/lib/settings/engine-settings';
+import { endpointFor, endpointProblem, type EndpointConfig } from '@/lib/settings/engine-settings';
 import type {
+  EngineProvider,
   EngineStatus,
   EngineTask,
   SpeechEngine,
@@ -172,3 +173,12 @@ export function endpointSummary(config: EndpointConfig): SummaryEngine {
   };
 }
 
+/** Custom endpoints, each task with the endpoint it uses (the summary may borrow translation's). */
+export const endpointProvider: EngineProvider = {
+  id: 'endpoint',
+  label: 'Custom',
+  built: true,
+  speech: (endpoints) => endpointSpeech(endpointFor(endpoints, 'speech')),
+  translate: (endpoints) => endpointTranslate(endpointFor(endpoints, 'translate')),
+  summary: (endpoints) => endpointSummary(endpointFor(endpoints, 'summary')),
+};

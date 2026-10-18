@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { serverSpeech, serverSummary, serverTranslate } from '@/lib/engines/server';
-import { BUILT_ENGINES, buildEngines, needsNetwork } from '@/lib/engines/registry';
+import { BUILT_ENGINES, buildEngines, ENGINE_LABELS, needsNetwork } from '@/lib/engines/registry';
+import { ENGINE_IDS } from '@/lib/engines/types';
 import { EngineError } from '@/lib/errors';
 import { DEFAULT_ENDPOINTS, DEFAULT_ENGINE_CHOICE } from '@/lib/settings/engine-settings';
 
@@ -12,6 +13,14 @@ describe('engine registry', () => {
       summary: serverSummary,
     });
     expect([...BUILT_ENGINES]).toEqual(['server', 'endpoint']);
+  });
+
+  it('has an engine for every id, tagged with that id', () => {
+    for (const id of ENGINE_IDS) {
+      const engines = buildEngines({ speech: id, translate: id, summary: id }, DEFAULT_ENDPOINTS);
+      expect([engines.speech.id, engines.translate.id, engines.summary.id]).toEqual([id, id, id]);
+      expect(ENGINE_LABELS[id]).toBeTruthy();
+    }
   });
 
   it('never falls back to the server for an engine that is not built yet', async () => {

@@ -1,11 +1,20 @@
 // The `server` engine: the app's own /api/* routes, which call the GPU servers with
 // server-side credentials. The shared passcode (APP_ACCESS_TOKEN) is kept in localStorage.
+import type { z } from 'zod';
+import {
+  API_PATHS,
+  apiErrorBodySchema,
+  healthStatusSchema,
+  transcriptionResultSchema,
+  type HealthStatus,
+} from '@/lib/api/contract';
 import { encodeWav } from '@/lib/audio/wav';
 import { ACCESS_TOKEN_HEADER, EngineError, type EngineErrorKind } from '@/lib/errors';
 import { readString, writeString } from '@/lib/storage';
-import type { ApiErrorBody, TranscriptionResult } from '@/lib/types';
+import type { TranscriptionResult } from '@/lib/types';
 import { withIdleTimeout } from '@/lib/util/streams';
 import type {
+  EngineProvider,
   EngineStatus,
   SpeechEngine,
   SummarizeRequest,
@@ -58,12 +67,10 @@ export class ApiError extends EngineError {
 }
 
 async function toApiError(res: Response): Promise<ApiError> {
-  try {
-    const body = (await res.json()) as ApiErrorBody;
-    return new ApiError(res.status, body.error.code, body.error.message);
-  } catch {
-    return new ApiError(res.status, 'http_error', `Request failed (${res.status})`);
-  }
+  const body = apiErrorBodySchema.safeParse(await res.json().catch(() => null));
+  return body.success
+    ? new ApiError(res.status, body.data.error.code, body.data.error.message)
+    : new ApiError(res.status, 'http_error', `Request failed (${res.status})`);
 }
 
 /** Longest each call may take, answer and streamed body together. */
@@ -128,16 +135,30 @@ async function send(url: string, init: RequestInit, timeoutMs: number): Promise<
   return { res, abort: () => own.abort(), timedOut: () => timedOut, done };
 }
 
-/** Reads a JSON answer within the call's time limit. */
-async function readJson<T>(call: Call): Promise<T> {
+/**
+ * Reads a JSON answer within the call's time limit and checks it against the contract, so an
+ * answer this version doesn't understand (e.g. a newer server) fails here, not later on.
+ */
+async function readJson<S extends z.ZodType>(call: Call, schema: S): Promise<z.output<S>> {
+  let raw: unknown;
   try {
-    return (await call.res.json()) as T;
+    raw = await call.res.json();
   } catch (err) {
     if (call.timedOut()) throw timeoutError();
-    throw err;
+    if ((err as Error)?.name === 'AbortError') throw err;
+    raw = undefined; // not JSON: rejected below
   } finally {
     call.done();
   }
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    throw new ApiError(
+      call.res.status,
+      'bad_response',
+      'The app server sent an unexpected answer.',
+    );
+  }
+  return parsed.data;
 }
 
 async function transcribeClip(audio: Blob, opts: TranscribeOptions): Promise<TranscriptionResult> {
@@ -146,11 +167,11 @@ async function transcribeClip(audio: Blob, opts: TranscribeOptions): Promise<Tra
   form.append('language', opts.language);
   if (opts.prompt) form.append('prompt', opts.prompt);
   const call = await send(
-    '/api/transcribe',
+    API_PATHS.transcribe,
     { method: 'POST', body: form, signal: opts.signal },
     CALL_TIMEOUT_MS.transcribe,
   );
-  return readJson<TranscriptionResult>(call);
+  return readJson(call, transcriptionResultSchema);
 }
 
 async function* chunks(reader: ReadableStreamDefaultReader<Uint8Array>) {
@@ -215,7 +236,7 @@ async function translateStream(
   signal?: AbortSignal,
 ): Promise<string> {
   const call = await send(
-    '/api/translate',
+    API_PATHS.translate,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -234,7 +255,7 @@ async function summarizeStream(
   signal?: AbortSignal,
 ): Promise<string> {
   const call = await send(
-    '/api/summarize',
+    API_PATHS.summarize,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -246,16 +267,13 @@ async function summarizeStream(
   return readTextStream(call, onDelta, 'Summary', { signal, firstMs: SUMMARY_FIRST_PIECE_MS });
 }
 
-export type ServiceHealth = 'ok' | 'error' | 'not_configured';
-export type HealthStatus = { speaches: ServiceHealth; llm: ServiceHealth };
-
 /** Health results are shared by the three engines for this long, so one check serves all. */
 const HEALTH_TTL_MS = 2_000;
 let health: { at: number; result: Promise<HealthStatus> } | null = null;
 
 export async function fetchHealth(): Promise<HealthStatus> {
-  const call = await send('/api/health', { cache: 'no-store' }, CALL_TIMEOUT_MS.health);
-  return readJson<HealthStatus>(call);
+  const call = await send(API_PATHS.health, { cache: 'no-store' }, CALL_TIMEOUT_MS.health);
+  return readJson(call, healthStatusSchema);
 }
 
 /** One /api/health call for all server engines checked together. */
@@ -310,4 +328,14 @@ export const serverSummary: SummaryEngine = {
   needsNetwork: true,
   status: () => serviceStatus('llm'),
   summarize: summarizeStream,
+};
+
+/** The app's own server; its engines don't depend on any settings. */
+export const serverProvider: EngineProvider = {
+  id: 'server',
+  label: 'Server',
+  built: true,
+  speech: () => serverSpeech,
+  translate: () => serverTranslate,
+  summary: () => serverSummary,
 };

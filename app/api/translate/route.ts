@@ -1,11 +1,5 @@
-import { z } from 'zod';
+import { translateBodySchema } from '@/lib/api/contract';
 import { startTranslation, type TranslationRun } from '@/lib/core/translate';
-import {
-  glossarySchema,
-  langSchema,
-  meetingContextSchema,
-  translationContextSchema,
-} from '@/lib/schemas';
 import { checkAccess } from '@/lib/server/auth';
 import { isConfigured } from '@/lib/server/env';
 import {
@@ -26,17 +20,6 @@ export const maxDuration = 60;
  */
 const MAX_BODY_BYTES = 1024 * 1024;
 
-const bodySchema = z.object({
-  text: z.string().trim().min(1).max(2000),
-  sourceLang: langSchema,
-  targetLang: langSchema,
-  context: translationContextSchema,
-  glossary: glossarySchema,
-  meetingContext: meetingContextSchema,
-  /** Second attempt after an empty or untranslated result: answer deterministically. */
-  retry: z.boolean().optional(),
-});
-
 export async function POST(request: Request) {
   const elapsed = startTimer();
   try {
@@ -44,7 +27,11 @@ export async function POST(request: Request) {
     if (denied) return denied;
     if (!isConfigured('llm')) return notConfigured('llm');
 
-    const { data: input, error } = await parseJsonBody(request, bodySchema, MAX_BODY_BYTES);
+    const { data: input, error } = await parseJsonBody(
+      request,
+      translateBodySchema,
+      MAX_BODY_BYTES,
+    );
     if (error) return error;
     const dir = `${input.sourceLang}->${input.targetLang}`;
 

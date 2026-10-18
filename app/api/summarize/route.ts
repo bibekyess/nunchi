@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { summarizeBodySchema } from '@/lib/api/contract';
 import {
   startSummary,
   SUMMARY_MAX_CHARS,
@@ -8,7 +8,6 @@ import {
   transcriptChars,
   type SummaryRun,
 } from '@/lib/core/summarize';
-import { glossarySchema, langSchema, meetingContextSchema } from '@/lib/schemas';
 import { checkAccess } from '@/lib/server/auth';
 import { isConfigured } from '@/lib/server/env';
 import {
@@ -27,22 +26,6 @@ export const maxDuration = 300;
 /** Room for `SUMMARY_MAX_CHARS` of Korean (3 bytes a character) plus JSON and the glossary. */
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
-const bodySchema = z.object({
-  utterances: z
-    .array(
-      z.object({
-        seq: z.number().int().nonnegative(),
-        sourceText: z.string().max(2000),
-        translation: z.string().max(4000).optional(),
-      }),
-    )
-    .min(1)
-    .max(5000),
-  glossary: glossarySchema,
-  meetingContext: meetingContextSchema,
-  outputLang: langSchema,
-});
-
 export async function POST(request: Request) {
   const elapsed = startTimer();
   try {
@@ -50,7 +33,7 @@ export async function POST(request: Request) {
     if (denied) return denied;
     if (!isConfigured('llm')) return notConfigured('llm');
 
-    const { data, error } = await parseJsonBody(request, bodySchema, MAX_BODY_BYTES);
+    const { data, error } = await parseJsonBody(request, summarizeBodySchema, MAX_BODY_BYTES);
     if (error) return error;
 
     const { utterances, ...input } = data;

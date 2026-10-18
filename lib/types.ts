@@ -64,12 +64,8 @@ export interface TranscriptionSegment {
 
 export interface TranscriptionResult {
   text: string;
-  /** ISO code when supported, otherwise whatever Whisper reported. */
-  language: string | undefined;
+  /** ISO code when supported, otherwise whatever Whisper reported; absent when none. */
+  language?: string;
   durationMs: number;
   segments: TranscriptionSegment[];
-}
-
-export interface ApiErrorBody {
-  error: { code: string; message: string };
 }

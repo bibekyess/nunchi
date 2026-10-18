@@ -2,7 +2,7 @@ import 'server-only';
 import type { z } from 'zod';
 import { EndpointError } from '@/lib/core/openai-compatible';
 import { EngineError } from '@/lib/errors';
-import type { ApiErrorBody } from '@/lib/types';
+import type { ApiErrorBody } from '@/lib/api/contract';
 import { withIdleTimeout } from '@/lib/util/streams';
 import type { Service } from './env';
 import { logTiming, ms, type Field } from './timing';

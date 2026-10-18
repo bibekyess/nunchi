@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  ApiError,
   resetServerHealth,
   serverSpeech,
   serverSummary,
@@ -56,6 +57,27 @@ describe('server engines', () => {
     vi.stubGlobal('fetch', fetch);
     expect((await serverSpeech.status()).state).toBe('error');
     expect(await serverSpeech.status()).toEqual({ state: 'ready' });
+  });
+
+  it('rejects a transcription answer this version does not understand', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => json({ transcript: 'from a newer server' })),
+    );
+    const err = await serverSpeech
+      .transcribe(new Float32Array(16), { language: 'auto' })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ code: 'bad_response', retryable: false });
+  });
+
+  it('accepts a transcription without a language, as JSON drops it', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => json({ text: '', durationMs: 900, segments: [] })),
+    );
+    const result = await serverSpeech.transcribe(new Float32Array(16), { language: 'auto' });
+    expect(result).toEqual({ text: '', durationMs: 900, segments: [] });
   });
 
   it('needs the network', () => {

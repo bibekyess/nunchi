@@ -2,6 +2,7 @@
 // (`server`), an OpenAI-compatible URL the browser calls directly (`endpoint`) or models
 // running in the browser (`device`, Phase 3). The user picks one per task.
 import type { Lang } from '@/lib/languages';
+import type { EndpointSettings } from '@/lib/settings/engine-settings';
 import type { GlossaryEntry, TranscriptionResult, TranslationContextItem } from '@/lib/types';
 import type { EngineId } from './ids';
 
@@ -75,4 +76,19 @@ export interface Engines {
   speech: SpeechEngine;
   translate: TranslateEngine;
   summary: SummaryEngine;
+}
+
+/**
+ * One way of doing the work: its name in settings and its engine for each task. A new engine
+ * is one provider, added to the registry's table.
+ */
+export interface EngineProvider {
+  readonly id: EngineId;
+  /** Shown in Processing settings and the status tooltip. */
+  readonly label: string;
+  /** False while it is listed as "coming soon"; picking it then makes every call fail. */
+  readonly built: boolean;
+  speech(endpoints: EndpointSettings): SpeechEngine;
+  translate(endpoints: EndpointSettings): TranslateEngine;
+  summary(endpoints: EndpointSettings): SummaryEngine;
 }

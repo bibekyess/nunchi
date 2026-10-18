@@ -1,4 +1,5 @@
 import { connection } from 'next/server';
+import type { HealthStatus } from '@/lib/api/contract';
 import { checkAccess } from '@/lib/server/auth';
 import { isConfigured, type Service } from '@/lib/server/env';
 import { errorResponse } from '@/lib/server/http';
@@ -17,7 +18,9 @@ export async function GET(request: Request) {
       check('speaches', pingSpeaches),
       check('llm', pingLlm),
     ]);
-    return Response.json({ speaches, llm }, { headers: { 'Cache-Control': 'no-store' } });
+    return Response.json({ speaches, llm } satisfies HealthStatus, {
+      headers: { 'Cache-Control': 'no-store' },
+    });
   } catch (err) {
     return errorResponse('health', err);
   }
