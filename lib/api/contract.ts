@@ -18,6 +18,7 @@ export const API_PATHS = {
   transcribe: '/api/transcribe',
   translate: '/api/translate',
   summarize: '/api/summarize',
+  unlock: '/api/unlock',
 } as const;
 
 // ---- Requests ----
@@ -55,6 +56,11 @@ export const summarizeBodySchema = z.object({
   outputLang: langSchema,
 }) satisfies z.ZodType<SummarizeRequest>;
 
+/** The passcode, exchanged at /api/unlock for a token the browser keeps instead. */
+export const unlockBodySchema = z.object({
+  passcode: z.string().min(1).max(1000),
+});
+
 // ---- Responses ----
 
 export const transcriptionResultSchema = z.object({
@@ -73,6 +79,13 @@ export const healthStatusSchema = z.object({
   llm: serviceHealthSchema,
 });
 
+/** An empty token means the server needs no passcode. `expiresAt` is in epoch ms. */
+export const unlockResponseSchema = z.object({
+  token: z.string(),
+  expiresAt: z.number(),
+});
+
+export type UnlockResponse = z.infer<typeof unlockResponseSchema>;
 export type ServiceHealth = z.infer<typeof serviceHealthSchema>;
 export type HealthStatus = z.infer<typeof healthStatusSchema>;
 

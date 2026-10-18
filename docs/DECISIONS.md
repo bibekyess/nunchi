@@ -317,8 +317,12 @@ shapes, prompts, temperatures, timeouts, retries, log lines and storage keys are
   page becoming visible again, restarts the recorder and shows a banner.
 - **Clips waiting for the network are capped at 50**; the oldest is dropped (shown as an error)
   beyond that.
-- **Passcode:** a 401 from any route shows an inline passcode field; the code is kept in
-  `localStorage` and sent as `x-nunchi-token`.
+- **Passcode:** a 401 from any route shows an inline passcode field. The passcode is exchanged
+  at `/api/unlock` for a 7-day HMAC-signed token (`<expiresAt>.<signature>`, keyed with
+  `APP_ACCESS_TOKEN`), and only that token is kept in `localStorage` and sent as
+  `x-nunchi-token`, so a shared computer never holds the passcode itself. Stateless: no token
+  store; rotating the passcode revokes every token. An expired token gets a 401 and the field
+  shows again.
 - **No shadcn yet:** a few local primitives (`components/ui.tsx`: buttons, native `<dialog>`) and a
   native `<select>` for the language menu, which is also the best picker on phones.
 - **`next start` with `output: 'standalone'`** prints a warning but works; the e2e test uses it.

@@ -202,6 +202,13 @@ browser still blocks it, open nunchi itself on `http://localhost`.
 All routes return errors as `{ error: { code, message } }` and require the `x-nunchi-token`
 header when `APP_ACCESS_TOKEN` is set. Upstream error bodies are logged, never forwarded.
 
+`POST /api/unlock` with `{ "passcode": "…" }` returns `{ token, expiresAt }`: a token signed
+with the passcode that expires after 7 days. The browser stores only this token, never the
+passcode, so someone reading `localStorage` on a shared computer can't learn the passcode and
+loses access when the token expires. Changing `APP_ACCESS_TOKEN` revokes every token at once.
+`x-nunchi-token` accepts either the token or the passcode itself (for scripts like the smoke
+test).
+
 Each upstream is optional. Leave `SPEACHES_BASE_URL` empty (or both `LLM_BASE_URL` and
 `LLM_MODEL`) and the routes for that service answer `503` with code `not_configured`; the
 Processing settings then show Server as not available for that task.

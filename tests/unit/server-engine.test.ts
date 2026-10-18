@@ -100,23 +100,26 @@ describe('unlockServer', () => {
     });
   });
 
-  it('keeps a passcode the server accepts and checks the engines again', async () => {
+  it('keeps the token for an accepted passcode, never the passcode itself', async () => {
     const fetch = vi
       .fn()
       .mockResolvedValueOnce(json({ error: { code: 'unauthorized', message: 'no' } }, 401))
-      .mockResolvedValueOnce(json({ speaches: 'ok', llm: 'ok' }))
+      .mockResolvedValueOnce(json({ token: '123.sig', expiresAt: 123 }))
       .mockResolvedValueOnce(json({ speaches: 'ok', llm: 'ok' }));
     vi.stubGlobal('fetch', fetch);
     expect((await serverSpeech.status()).state).toBe('error');
 
     const version = accessTokenVersion();
     expect(await unlockServer('secret')).toBe('ok');
-    expect(getAccessToken()).toBe('secret');
+    expect(getAccessToken()).toBe('123.sig');
     expect(accessTokenVersion()).toBe(version + 1);
-    const init = fetch.mock.calls[1][1] as RequestInit;
-    expect((init.headers as Record<string, string>)[ACCESS_TOKEN_HEADER]).toBe('secret');
-    // The locked result is not reused after unlocking.
+    const [url, init] = fetch.mock.calls[1] as [string, RequestInit];
+    expect(url).toBe('/api/unlock');
+    expect(JSON.parse(init.body as string)).toEqual({ passcode: 'secret' });
+    // The locked result is not reused after unlocking, and the token is what gets sent.
     expect(await serverSpeech.status()).toEqual({ state: 'ready' });
+    const next = fetch.mock.calls[2][1] as RequestInit;
+    expect((next.headers as Record<string, string>)[ACCESS_TOKEN_HEADER]).toBe('123.sig');
   });
 
   it('reports a wrong passcode and keeps the old one', async () => {

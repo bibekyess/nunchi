@@ -1,11 +1,12 @@
 // The `server` engine: the app's own /api/* routes, which call the GPU servers with
-// server-side credentials. The shared passcode (APP_ACCESS_TOKEN) is kept in localStorage.
+// server-side credentials. The token from /api/unlock (never the passcode) is kept in localStorage.
 import type { z } from 'zod';
 import {
   API_PATHS,
   apiErrorBodySchema,
   healthStatusSchema,
   transcriptionResultSchema,
+  unlockResponseSchema,
   type HealthStatus,
 } from '@/lib/api/contract';
 import { encodeWav } from '@/lib/audio/wav';
@@ -309,15 +310,24 @@ function sharedHealth(): Promise<HealthStatus> {
 
 export type UnlockResult = 'ok' | 'wrong' | 'unreachable';
 
-/** Checks `token` against /api/health and keeps it only when the server accepts it. */
-export async function unlockServer(token: string): Promise<UnlockResult> {
+/**
+ * Exchanges `passcode` at /api/unlock for a token that expires, and keeps only the token: the
+ * passcode itself is never stored in this browser.
+ */
+export async function unlockServer(passcode: string): Promise<UnlockResult> {
+  let token: string;
   try {
     const call = await send(
-      API_PATHS.health,
-      { cache: 'no-store', headers: { [ACCESS_TOKEN_HEADER]: token } },
+      API_PATHS.unlock,
+      {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passcode }),
+      },
       CALL_TIMEOUT_MS.health,
     );
-    await readJson(call, healthStatusSchema);
+    ({ token } = await readJson(call, unlockResponseSchema));
   } catch (err) {
     return err instanceof EngineError && err.kind === 'auth' ? 'wrong' : 'unreachable';
   }
