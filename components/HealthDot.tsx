@@ -23,9 +23,16 @@ function word(status: EngineStatus): string {
     case 'unavailable':
       return status.reason.replace(/\.$/, '').toLowerCase();
     case 'error':
-      return status.needsPasscode ? 'needs passcode' : 'down';
+      return status.needsPasscode ? 'server locked' : 'down';
   }
 }
+
+/** Only the app server's passcode is missing; on-device and custom engines never ask for it. */
+const isLocked = (s: EngineStatus) => s.state === 'error' && s.needsPasscode === true;
+
+const LOCKED_HINT =
+  "The app's servers need a passcode. Enter it when you start a session, " +
+  'or choose on-device or your own engines in Processing settings.';
 
 /** Health of the engines chosen for each task (the app's servers by default). */
 export function HealthDot({ compact = false }: { compact?: boolean }) {
@@ -35,9 +42,12 @@ export function HealthDot({ compact = false }: { compact?: boolean }) {
 
   const known = ENGINE_TASKS.every((t) => statuses[t] !== null);
   const list = ENGINE_TASKS.map((t) => statuses[t]).filter((s): s is EngineStatus => s !== null);
+  const notReady = list.filter((s) => s.state !== 'ready');
+  // Every problem is the missing passcode: one calm label instead of one per task.
+  const onlyLocked = known && notReady.length > 0 && notReady.every(isLocked);
   const tone: Tone = !known
     ? 'neutral'
-    : list.some((s) => s.state === 'error')
+    : list.some((s) => s.state === 'error' && !isLocked(s))
       ? 'danger'
       : list.every((s) => s.state === 'ready')
         ? 'ok'
@@ -47,18 +57,22 @@ export function HealthDot({ compact = false }: { compact?: boolean }) {
     ? allServer
       ? 'Checking servers…'
       : 'Checking…'
-    : tone === 'ok'
-      ? allServer
-        ? 'Servers ready'
-        : 'Ready'
-      : // Only the tasks that need attention, so the label stays short on phones.
-        ENGINE_TASKS.filter((t) => statuses[t]!.state !== 'ready')
-          .map((t) => `${TASK_NAMES[t]} ${word(statuses[t]!)}`)
-          .join(' · ');
+    : onlyLocked
+      ? 'Server locked'
+      : tone === 'ok'
+        ? allServer
+          ? 'Servers ready'
+          : 'Ready'
+        : // Only the tasks that need attention, so the label stays short on phones.
+          ENGINE_TASKS.filter((t) => statuses[t]!.state !== 'ready')
+            .map((t) => `${TASK_NAMES[t]} ${word(statuses[t]!)}`)
+            .join(' · ');
   // Tooltip: which engine does each task and how it is.
   const detail = ENGINE_TASKS.map(
     (t) => `${TASK_NAMES[t]} (${ENGINE_LABELS[choice[t]]}): ${describeStatus(statuses[t]).text}`,
-  ).join('\n');
+  )
+    .concat(list.some(isLocked) ? ['', LOCKED_HINT] : [])
+    .join('\n');
 
   if (!compact) {
     return (

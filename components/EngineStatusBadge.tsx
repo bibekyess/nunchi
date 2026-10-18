@@ -14,7 +14,9 @@ export function describeStatus(status: EngineStatus | null): { tone: Tone; text:
     case 'unavailable':
       return { tone: 'neutral', text: status.reason.replace(/\.$/, '') };
     case 'error':
-      return { tone: 'danger', text: status.needsPasscode ? 'Passcode needed' : 'Down' };
+      return status.needsPasscode
+        ? { tone: 'warn', text: 'Passcode needed' }
+        : { tone: 'danger', text: 'Down' };
   }
 }
 
