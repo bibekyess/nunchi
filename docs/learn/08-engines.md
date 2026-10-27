@@ -111,7 +111,7 @@ const PROVIDERS: Record<EngineId, EngineProvider> = {
 };
 ```
 
-An `EngineProvider` (`types.ts:89`) has a label, a `built` flag, and a factory per task.
+An `EngineProvider` (`types.ts:91`) has a label, a `built` flag, and a factory per task.
 `buildEngines(choice, endpoints)` (line 58) picks one provider per task.
 
 `Record<EngineId, EngineProvider>` forces the table to have an entry for **every** engine id.

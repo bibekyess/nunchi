@@ -39,8 +39,8 @@ most depth.
 
 ## Conventions used in this guide
 
-- `lib/pipeline/queue.ts:181` means file `lib/pipeline/queue.ts`, line 181. In VS Code you
-  can Ctrl/Cmd-click it, or use "Go to File" (Ctrl/Cmd+P) and type `queue.ts:181`. Line
+- `lib/pipeline/queue.ts:190` means file `lib/pipeline/queue.ts`, line 181. In VS Code you
+  can Ctrl/Cmd-click it, or use "Go to File" (Ctrl/Cmd+P) and type `queue.ts:190`. Line
   numbers match the code as of October 2026 and may drift a little as the code changes.
 - **Why** sections give the reasoning. When the reasoning comes from `DECISIONS.md` or a code
   comment, the guide says so. When it is an explanation of a common engineering practice

@@ -62,10 +62,19 @@ export interface TranscriptionSegment {
   avgLogprob: number;
 }
 
+export interface TranscriptionWord {
+  word: string;
+  /** Seconds from the start of the clip. */
+  start: number;
+  end: number;
+}
+
 export interface TranscriptionResult {
   text: string;
   /** ISO code when supported, otherwise whatever Whisper reported; absent when none. */
   language?: string;
   durationMs: number;
   segments: TranscriptionSegment[];
+  /** Word timings, only when asked for (`words: true`) and the server supports them. */
+  words?: TranscriptionWord[];
 }

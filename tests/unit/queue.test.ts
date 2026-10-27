@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Clip } from '@/lib/audio/vad';
 import { ApiError } from '@/lib/engines/server';
 import type { SpeechEngine, TranslateEngine, TranslateRequest } from '@/lib/engines/types';
 import { EngineError } from '@/lib/errors';
@@ -23,7 +24,13 @@ const tr = (text: string, language = 'ko'): TranscriptionResult => ({
   segments: [{ text, noSpeechProb: 0.01, avgLogprob: -0.2 }],
 });
 
-const clip = (ms = 1500) => ({ audio: new Float32Array(16 * ms), startedAt: 0, durationMs: ms });
+/** Clips start 10 s apart, too far to be joined, unless `startedAt` says otherwise. */
+let clock = 0;
+const clip = (ms = 1500, startedAt = (clock += 10_000)): Clip => ({
+  audio: new Float32Array(16 * ms),
+  startedAt,
+  durationMs: ms,
+});
 
 /** Lets queued promise chains run. */
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -75,6 +82,7 @@ const ordered = () => state().ids.map((id) => state().byId[id]);
 
 beforeEach(() => {
   n = 0;
+  clock = 0;
   sessionStore.setState({ session: null });
   state().startSession(`s${Math.random()}`);
 });
@@ -409,5 +417,117 @@ describe('PipelineQueue', () => {
     expect(state().ids).toHaveLength(0);
     expect(deps.transcribe).not.toHaveBeenCalled();
     expect(q.pendingClips).toBe(0);
+  });
+
+  describe('rejoining a line cut mid-word', () => {
+    const words = [
+      { word: ' I', start: 0, end: 0.2 },
+      { word: ' went', start: 0.2, end: 0.4 },
+      { word: ' to', start: 0.4, end: 0.5 },
+      { word: ' hospital', start: 0.6, end: 1.2 }, // middle at 0.9 s: before the 1 s cut
+      { word: ' for', start: 1.3, end: 1.5 },
+      { word: ' checkup', start: 1.5, end: 1.9 },
+    ];
+    const joined = (withWords = true): TranscriptionResult => ({
+      ...tr('I went to hospital for checkup', 'en'),
+      ...(withWords && { words }),
+    });
+    const translate = vi.fn(async (body: TranslateRequest, onDelta: (d: string) => void) => {
+      onDelta(`T(${body.text})`);
+      return `T(${body.text})`;
+    });
+
+    /** Two back-to-back lines; `again` answers the joined re-transcription. */
+    async function speak(first: string, again: () => Promise<TranscriptionResult>) {
+      const transcribe = vi
+        .fn()
+        .mockResolvedValueOnce(tr(first, 'en'))
+        .mockResolvedValueOnce(tr('petal for checkup', 'en'))
+        .mockImplementationOnce(again);
+      const q = new PipelineQueue(makeDeps({ transcribe, translate }));
+      q.enqueue(clip(1000, 0));
+      await flush();
+      q.enqueue(clip(1000, 1000));
+      for (let i = 0; i < 5; i++) await flush();
+      return transcribe;
+    }
+
+    it('re-transcribes both clips as one and splits the text where the first ended', async () => {
+      const transcribe = await speak('I went to hoss', async () => joined());
+      expect(transcribe).toHaveBeenCalledTimes(3);
+      const [audio, opts] = transcribe.mock.calls[2];
+      expect((audio as Float32Array).length).toBe(32_000);
+      expect(opts).toMatchObject({ words: true });
+      expect(ordered().map((u) => [u.status, u.sourceText, u.translation])).toEqual([
+        ['done', 'I went to hospital', 'T(I went to hospital)'],
+        ['done', 'for checkup', 'T(for checkup)'],
+      ]);
+    });
+
+    it('changes the earlier line once, text and translation together', async () => {
+      const seen: [string | undefined, string | undefined][] = [];
+      const stop = sessionStore.subscribe((s) => {
+        const u = s.byId[s.ids[0]];
+        if (u?.status === 'done') seen.push([u.sourceText, u.translation]);
+      });
+      await speak('I went to hoss', async () => joined());
+      stop();
+      expect([...new Map(seen.map((v) => [v.join('|'), v])).values()]).toEqual([
+        ['I went to hoss', 'T(I went to hoss)'],
+        ['I went to hospital', 'T(I went to hospital)'],
+      ]);
+    });
+
+    it('merges the two lines when the server gives no word timings', async () => {
+      await speak('I went to hoss', async () => joined(false));
+      expect(ordered().map((u) => [u.status, u.sourceText])).toEqual([
+        ['done', 'I went to hospital for checkup'],
+        ['skipped', undefined],
+      ]);
+    });
+
+    it('keeps both lines as heard when the word timings do not fit the text', async () => {
+      await speak('I went to hoss', async () => ({
+        ...joined(),
+        words: [{ word: ' walked', start: 0, end: 0.5 }],
+      }));
+      expect(ordered().map((u) => u.sourceText)).toEqual(['I went to hoss', 'petal for checkup']);
+    });
+
+    it('never joins a line split off by a rejoin with the next one', async () => {
+      const transcribe = vi
+        .fn()
+        .mockResolvedValueOnce(tr('I went to hoss', 'en'))
+        .mockResolvedValueOnce(tr('petal for checkup', 'en'))
+        .mockResolvedValueOnce(joined())
+        .mockResolvedValueOnce(tr('and then home', 'en'));
+      const q = new PipelineQueue(makeDeps({ transcribe, translate }));
+      for (const startedAt of [0, 1000, 2000]) {
+        q.enqueue(clip(1000, startedAt));
+        for (let i = 0; i < 5; i++) await flush();
+      }
+      expect(transcribe).toHaveBeenCalledTimes(4);
+      expect(ordered().map((u) => u.sourceText)).toEqual([
+        'I went to hospital',
+        'for checkup',
+        'and then home',
+      ]);
+    });
+
+    it('leaves a finished sentence alone', async () => {
+      const transcribe = await speak('I went home.', async () => joined());
+      expect(transcribe).toHaveBeenCalledTimes(2);
+      expect(ordered().map((u) => u.sourceText)).toEqual(['I went home.', 'petal for checkup']);
+    });
+
+    it('keeps both lines as heard when the re-transcription fails', async () => {
+      await speak('I went to hoss', async () => {
+        throw new ApiError(502, 'upstream_error', 'The speaches server returned an error.');
+      });
+      expect(ordered().map((u) => [u.status, u.sourceText])).toEqual([
+        ['done', 'I went to hoss'],
+        ['done', 'petal for checkup'],
+      ]);
+    });
   });
 });

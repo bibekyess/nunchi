@@ -39,7 +39,7 @@ Neural networks don't work well on raw samples. Whisper first converts the audio
 ```
 
 Whisper always works on a **30-second window**. Shorter audio is padded with silence and
-longer audio must be split. That's why nunchi force-splits clips at 25 seconds (chapter 03).
+longer audio must be split. That's why nunchi splits clips by 25 seconds (chapter 03).
 It also means **every clip costs a full 30-second pass** through the first half of the
 model, however short the clip is (`docs/ENGINES-PLAN.md`, "Findings").
 
@@ -100,7 +100,7 @@ nunchi uses both to filter made-up text (Part 4).
 ### The request
 
 `POST {baseUrl}/audio/transcriptions` as `multipart/form-data` (the format browsers use for
-file uploads). See `speech.transcribe` in `lib/core/openai-compatible.ts:400`:
+file uploads). See `speech.transcribe` in `lib/core/openai-compatible.ts:404`:
 
 ```ts
 form.append('file', encodeWav(audio), 'clip.wav'); // the audio file
@@ -135,8 +135,8 @@ Each parameter, and why:
 }
 ```
 
-`parseTranscription` (`openai-compatible.ts:181`) converts it into the app's own
-`TranscriptionResult` type (`lib/types.ts:65`):
+`parseTranscription` (`openai-compatible.ts:182`) converts it into the app's own
+`TranscriptionResult` type (`lib/types.ts:72`):
 
 - trims the text (Whisper adds a leading space),
 - **normalizes the language**: some servers say `"ko"`, others `"korean"`.
@@ -166,7 +166,7 @@ spellings and style.
 ```
 
 - **Glossary terms first**, de-duplicated, ending with a period.
-- **Then the end of the previous sentence** (`previousSource` in `lib/pipeline/queue.ts:160`),
+- **Then the end of the previous sentence** (`previousSource` in `lib/pipeline/queue.ts:169`),
   for continuity: a sentence split by a pause often continues the last one.
 - **Capped at 200 characters**, and the tail is only added if more than 20 characters of room
   remain. The comment explains why: _"long prompts make Whisper repeat itself"_. The decoder
@@ -207,7 +207,7 @@ Notes on the design:
   punctuation and symbols in any script, Korean included.
 - The list is meant to grow: _"Extend freely"_ (line 6).
 - Dropped lines aren't deleted. They get `status: 'skipped'` and are hidden
-  (`lib/pipeline/queue.ts:231`), so they still exist in the data if you need to debug.
+  (`lib/pipeline/queue.ts:241`), so they still exist in the data if you need to debug.
 
 ---
 
@@ -217,7 +217,7 @@ On very short clips, "네." (yes) or "아, 그렇죠", Whisper's language detect
 and often answers Japanese or Chinese. In Auto mode that would produce a line in the wrong
 script and pick the wrong translation direction.
 
-`transcribeWithFallback` (`lib/core/transcribe.ts:27`):
+`transcribeWithFallback` (`lib/core/transcribe.ts:28`):
 
 ```ts
 let result = await speech.transcribe(audio, { language: forced, prompt, signal });

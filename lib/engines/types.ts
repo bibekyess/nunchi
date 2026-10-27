@@ -32,6 +32,8 @@ interface EngineBase {
 export interface TranscribeOptions {
   language: Lang | 'auto';
   prompt?: string;
+  /** Also return word timings; used to split a re-joined line. */
+  words?: boolean;
   signal?: AbortSignal;
 }
 

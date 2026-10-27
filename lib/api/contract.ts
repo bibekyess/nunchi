@@ -27,6 +27,10 @@ export const API_PATHS = {
 export const transcribeFieldsSchema = z.object({
   language: langOrAutoSchema.default('auto'),
   prompt: z.string().max(200).optional(),
+  words: z
+    .literal('1')
+    .optional()
+    .transform((v) => v === '1'),
 }) satisfies z.ZodType<Omit<TranscribeOptions, 'signal'>>;
 
 export const translateBodySchema = z.object({
@@ -70,6 +74,7 @@ export const transcriptionResultSchema = z.object({
   segments: z.array(
     z.object({ text: z.string(), noSpeechProb: z.number(), avgLogprob: z.number() }),
   ),
+  words: z.array(z.object({ word: z.string(), start: z.number(), end: z.number() })).optional(),
 }) satisfies z.ZodType<TranscriptionResult>;
 
 const serviceHealthSchema = z.enum(['ok', 'error', 'not_configured']);

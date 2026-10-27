@@ -5,6 +5,8 @@ import { frameLevel, samplesToMs } from './wav';
 const ASSET_PATH = '/vad/';
 
 export const MAX_UTTERANCE_MS = 25_000; // Whisper's hard limit is 30 s
+/** Past this, a long monologue is split at the next quiet frame rather than mid-word. */
+export const SPLIT_AT_PAUSE_MS = 22_000;
 
 export interface Clip {
   audio: Float32Array; // 16 kHz mono
@@ -29,6 +31,10 @@ export class SpeechRecorder {
   private splitTimer: ReturnType<typeof setTimeout> | null = null;
   /** Between start() and pause()/destroy(); a force-split only restarts while this holds. */
   private listening = false;
+  /** A force-split is running; quiet frames meanwhile don't start another. */
+  private splitting = false;
+  /** Speech probability below which a frame counts as a pause (MicVAD's "speech ended" level). */
+  private quietBelow = 0;
   private readonly t0 = performance.now();
 
   private constructor(private readonly callbacks: SpeechRecorderCallbacks) {}
@@ -39,6 +45,7 @@ export class SpeechRecorder {
     callbacks: SpeechRecorderCallbacks,
   ): Promise<SpeechRecorder> {
     const recorder = new SpeechRecorder(callbacks);
+    recorder.quietBelow = toMicVadOptions(settings).negativeSpeechThreshold;
     // Loaded lazily: the model + WASM are ~16 MB and only needed once recording starts.
     const { MicVAD } = await import('@ricky0123/vad-web');
     recorder.vad = await MicVAD.new({
@@ -55,7 +62,7 @@ export class SpeechRecorder {
       getStream: async () => stream,
       pauseStream: async () => {},
       resumeStream: async () => stream,
-      onFrameProcessed: (_probs, frame) => callbacks.onLevel?.(frameLevel(frame)),
+      onFrameProcessed: (probs, frame) => recorder.handleFrame(probs, frame),
       onSpeechStart: () => recorder.handleSpeechStart(),
       onVADMisfire: () => recorder.handleSpeechStop(),
       onSpeechEnd: (audio) => recorder.handleSpeechEnd(audio),
@@ -65,7 +72,9 @@ export class SpeechRecorder {
 
   /** Applies new detection settings immediately, without touching the stream. */
   updateSettings(settings: VadSettings) {
-    this.vad?.setOptions(toMicVadOptions(settings));
+    const options = toMicVadOptions(settings);
+    this.quietBelow = options.negativeSpeechThreshold;
+    this.vad?.setOptions(options);
   }
 
   async start() {
@@ -97,6 +106,12 @@ export class SpeechRecorder {
     return performance.now() - this.t0;
   }
 
+  private handleFrame(probs: { isSpeech: number }, frame: Float32Array) {
+    this.callbacks.onLevel?.(frameLevel(frame));
+    if (this.speechStartedAt === null || probs.isSpeech >= this.quietBelow) return;
+    if (this.now() - this.speechStartedAt >= SPLIT_AT_PAUSE_MS) void this.forceSplit();
+  }
+
   private handleSpeechStart() {
     this.speechStartedAt = this.now();
     this.callbacks.onSpeaking?.(true);
@@ -120,7 +135,9 @@ export class SpeechRecorder {
   /** Long monologue: submit what we have and keep listening. */
   private async forceSplit() {
     const vad = this.vad;
-    if (!vad) return;
+    if (!vad || this.splitting) return;
+    this.splitting = true;
+    this.clearSplitTimer();
     try {
       await vad.pause(); // submitUserSpeechOnPause → onSpeechEnd with the audio so far
       // Paused or destroyed (Stop, leaving the page) meanwhile: don't bring it back.
@@ -128,6 +145,8 @@ export class SpeechRecorder {
       await vad.start();
     } catch (err) {
       console.error('[recorder] force-split failed', err);
+    } finally {
+      this.splitting = false;
     }
   }
 

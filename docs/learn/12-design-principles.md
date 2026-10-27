@@ -146,10 +146,11 @@ Every resource that could grow has a limit, each with a comment explaining the n
 
 | Limit                                  | Value                                       | Where                  |
 | -------------------------------------- | ------------------------------------------- | ---------------------- |
-| parallel transcriptions / translations | 2 / 2                                       | `queue.ts:11`          |
-| clips waiting offline                  | 50 (~15 MB)                                 | `queue.ts:14`          |
-| retries                                | 3 attempts, 1 s / 3 s backoff               | `queue.ts:12`          |
+| parallel transcriptions / translations | 2 / 2                                       | `queue.ts:12`          |
+| clips waiting offline                  | 50 (~15 MB)                                 | `queue.ts:15`          |
+| retries                                | 3 attempts, 1 s / 3 s backoff               | `queue.ts:13`          |
 | clip length                            | 25 s                                        | `vad.ts:7`             |
+| rejoined lines                         | 700 ms gap, 25 s together                   | `pipeline/rejoin.ts`   |
 | request bodies                         | 2 MB audio, 1 MB translate, 2 MB summary    | routes                 |
 | summary input                          | 300,000 chars, at most ~13 parts            | `core/summarize.ts:22` |
 | Whisper prompt                         | 200 chars                                   | `whisper-prompt.ts:3`  |

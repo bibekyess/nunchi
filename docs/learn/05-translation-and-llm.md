@@ -50,7 +50,7 @@ Content-Type: application/json
   (`TRANSLATE_MAX_TOKENS`, `lib/core/translate.ts:5`) and stops a runaway answer.
 - **stream: true**: send the answer piece by piece instead of all at the end.
 
-`chatBody` (`lib/core/openai-compatible.ts:303`) builds this. `config.extraBody` is merged in
+`chatBody` (`lib/core/openai-compatible.ts:307`) builds this. `config.extraBody` is merged in
 last, which is how vLLM-specific fields get added without the client knowing about vLLM.
 
 ### Why a hand-written client instead of the OpenAI SDK?
@@ -107,12 +107,12 @@ covered by many small tests in `tests/unit/openai-compatible.test.ts`.
 There's a subtle text-encoding issue here too. A Korean character is 3 bytes in UTF-8, and a
 chunk boundary can split it. `decoder.decode(value, { stream: true })` (line 136) tells the
 `TextDecoder` to keep an incomplete character until the next chunk. You'll see the same
-`{ stream: true }` in the browser's reader (`lib/engines/server.ts:237`). Without it,
+`{ stream: true }` in the browser's reader (`lib/engines/server.ts:238`). Without it,
 translations would sometimes show `�` characters.
 
 ### From events to text
 
-`chat.stream()` (`openai-compatible.ts:318`) chains generators:
+`chat.stream()` (`openai-compatible.ts:322`) chains generators:
 
 ```
 response.body (bytes)
@@ -192,7 +192,7 @@ What each part is for:
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | "Output only the translation"         | chat models like to add "Here is the translation:" or notes                                                                                                                                                  |
 | "may contain errors or be a fragment" | the input is ASR output, cut at pauses, not clean text                                                                                                                                                       |
-| **Previous lines (up to 5)**          | Korean drops subjects and pronouns, so "발표하겠습니다" alone doesn't say _who_ presents. Context lets the model infer it. Only lines with status `done` are used (`context()`, `lib/pipeline/queue.ts:169`) |
+| **Previous lines (up to 5)**          | Korean drops subjects and pronouns, so "발표하겠습니다" alone doesn't say _who_ presents. Context lets the model infer it. Only lines with status `done` are used (`context()`, `lib/pipeline/queue.ts:178`) |
 | "Do not translate them again"         | otherwise the model sometimes translates the context too                                                                                                                                                     |
 | Register rule                         | Korean has politeness levels, and the tone should carry over                                                                                                                                                 |
 | **Glossary**                          | names and jargon the model can't know. Formatted by the shared `formatGlossary` (`lib/prompts/glossary.ts`), the same one the summary uses                                                                   |
@@ -236,13 +236,13 @@ Why the split matters, in `app/api/translate/route.ts:38`:
    (`translate.ts:55`). It happens server-side, next to the model, so no extra network trip.
 2. **"Untranslated" answer → retry from the browser.** If the result equals the source text
    (the model just echoed the Korean), the queue asks again with `retry: true`
-   (`lib/pipeline/queue.ts:270`), which makes the server use temperature 0. This check runs in
+   (`lib/pipeline/queue.ts:415`), which makes the server use temperature 0. This check runs in
    the browser because it needs the **complete** translation, which only exists once the
    stream has ended on the client (DECISIONS.md Phase 0 and Phase 1).
 
 ### Reading the stream in the browser
 
-`translateStream` → `readTextStream` (`lib/engines/server.ts:208`) reads the response body,
+`translateStream` → `readTextStream` (`lib/engines/server.ts:209`) reads the response body,
 decodes UTF-8 incrementally, and calls `onDelta(piece)` for each piece. The queue's `onDelta`
 appends to the store (`appendTranslation`), so the line grows on screen.
 

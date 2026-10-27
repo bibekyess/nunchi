@@ -8,6 +8,7 @@ export const FALLBACK_LANG = 'ko' as const;
 export interface TranscribeRequest {
   language: Lang | 'auto';
   prompt?: string;
+  words?: boolean;
   signal?: AbortSignal;
 }
 
@@ -27,17 +28,17 @@ export interface TranscribeOutcome {
 export async function transcribeWithFallback(
   speech: SpeechModel,
   audio: Float32Array,
-  { language, prompt, signal }: TranscribeRequest,
+  { language, prompt, words, signal }: TranscribeRequest,
 ): Promise<TranscribeOutcome> {
   const forced = language === 'auto' ? undefined : language;
   let t0 = performance.now();
-  let result = await speech.transcribe(audio, { language: forced, prompt, signal });
+  let result = await speech.transcribe(audio, { language: forced, prompt, words, signal });
   const firstMs = Math.round(performance.now() - t0);
   let fallbackMs: number | undefined;
 
   if (!forced && result.text !== '' && !isLang(result.language)) {
     t0 = performance.now();
-    result = await speech.transcribe(audio, { language: FALLBACK_LANG, prompt, signal });
+    result = await speech.transcribe(audio, { language: FALLBACK_LANG, prompt, words, signal });
     fallbackMs = Math.round(performance.now() - t0);
     result.language ??= FALLBACK_LANG;
   }

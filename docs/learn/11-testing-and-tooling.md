@@ -46,7 +46,7 @@ imported and called directly (chapter 12):
 | `checkEndpoint`          | `fetch`, `pageProtocol`                            | fakes for CORS / mixed-content cases                   |
 | `canCaptureTabAudio`     | `nav`                                              | fake `navigator` objects                               |
 
-**Deferred promises** are the key trick for async code (`tests/unit/queue.test.ts:9`):
+**Deferred promises** are the key trick for async code (`tests/unit/queue.test.ts:10`):
 
 ```ts
 function deferred<T>() {
