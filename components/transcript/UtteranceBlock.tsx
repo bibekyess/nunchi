@@ -92,12 +92,18 @@ export const UtteranceBlock = memo(function UtteranceBlock({
     if (selected) block.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [selected]);
   const [entering, setEntering] = useState(animate);
-  // Text fades in when the placeholder resolves while we watch (not on hydration).
+  // Text fades in when the placeholder resolves while we watch (not on hydration), and again
+  // when a rejoin with the next line rewrites it.
   const [prevStatus, setPrevStatus] = useState(u?.status);
+  const [prevSource, setPrevSource] = useState(u?.sourceText);
   const [revealing, setRevealing] = useState(false);
   if (u && u.status !== prevStatus) {
     setPrevStatus(u.status);
     if (prevStatus === 'transcribing') setRevealing(true);
+  }
+  if (u && u.sourceText !== prevSource) {
+    setPrevSource(u.sourceText);
+    if (prevSource !== undefined) setRevealing(true);
   }
 
   if (!u || u.status === 'skipped') return null;

@@ -171,6 +171,7 @@ interface VerboseJson {
   language?: string;
   duration?: number;
   segments?: { text?: string; no_speech_prob?: number; avg_logprob?: number }[];
+  words?: { word?: string; start?: number; end?: number }[];
 }
 
 /**
@@ -188,6 +189,9 @@ export function parseTranscription(data: VerboseJson): TranscriptionResult {
       noSpeechProb: s.no_speech_prob ?? 0,
       avgLogprob: s.avg_logprob ?? 0,
     })),
+    ...(data.words && {
+      words: data.words.map((w) => ({ word: w.word ?? '', start: w.start ?? 0, end: w.end ?? 0 })),
+    }),
   };
 }
 
@@ -405,6 +409,11 @@ export function createOpenAICompatible(config: OpenAICompatibleConfig): OpenAICo
       if (opts.prompt) form.append('prompt', opts.prompt);
       form.append('temperature', '0');
       form.append('response_format', 'verbose_json');
+      if (opts.words) {
+        // Asking for words alone would drop the segments the hallucination filter reads.
+        form.append('timestamp_granularities[]', 'word');
+        form.append('timestamp_granularities[]', 'segment');
+      }
       const response = await request(
         '/audio/transcriptions',
         { method: 'POST', headers: headers(), body: form },

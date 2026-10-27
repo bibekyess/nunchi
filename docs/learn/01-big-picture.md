@@ -68,7 +68,7 @@ links to the code. Later chapters zoom into each step.
   `navigator.mediaDevices.getUserMedia(...)`, or for a browser tab's audio with
   `getDisplayMedia(...)`, or both mixed. The result is a `MediaStream`: a live, never-ending
   flow of audio.
-- `SpeechRecorder.create()` (`lib/audio/vad.ts:36`) loads the **Silero VAD** model
+- `SpeechRecorder.create()` (`lib/audio/vad.ts:42`) loads the **Silero VAD** model
   (~16 MB, loaded only now and cached afterwards) and attaches it to the stream.
 - A **screen wake lock** keeps the phone screen on (`lib/browser/wake-lock.ts`).
 
@@ -78,17 +78,18 @@ The VAD looks at the audio in small frames (512 samples ≈ 32 ms) and gives eac
 probability of being speech. When the probability crosses a threshold, "speech started".
 When it stays low for 600 ms (the `redemptionMs` setting), "speech ended", and the VAD hands
 over all the audio from just before the start to the end as one `Float32Array`.
-`SpeechRecorder.handleSpeechEnd` (`lib/audio/vad.ts:113`) wraps it as a `Clip` and calls
+`SpeechRecorder.handleSpeechEnd` (`lib/audio/vad.ts:128`) wraps it as a `Clip` and calls
 `onClip`, which the controller wired to `queue.enqueue(clip)`
 (`lib/session/controller.ts:70`).
 
-If someone talks for 25 seconds without pausing, the recorder force-cuts the clip
-(`lib/audio/vad.ts:121`), because Whisper only handles 30 seconds at a time.
+If someone talks for more than 22 seconds without a pause, the recorder splits the clip at
+the next quiet frame, and at 25 seconds at the latest (`lib/audio/vad.ts:136`), because
+Whisper only handles 30 seconds at a time.
 → Chapter 03.
 
 ### 3. The queue creates an utterance
 
-`PipelineQueue.enqueue` (`lib/pipeline/queue.ts:57`) gives the clip the next sequence number
+`PipelineQueue.enqueue` (`lib/pipeline/queue.ts:64`) gives the clip the next sequence number
 (`seq`) and adds an utterance with `status: 'transcribing'` to the session store. The UI
 immediately shows a shimmering placeholder whose width grows with the clip's length
 (`components/transcript/UtteranceBlock.tsx:13`), so the user sees "something is coming"
@@ -96,7 +97,7 @@ right away.
 
 ### 4. Transcription
 
-`runTranscribe` (`lib/pipeline/queue.ts:181`):
+`runTranscribe` (`lib/pipeline/queue.ts:190`):
 
 - Waits for a free slot (at most **2** transcriptions run at once).
 - Builds a **Whisper prompt** from the glossary plus the end of the previous sentence
@@ -104,12 +105,12 @@ right away.
 - Calls `engine.transcribe(audio, { language, prompt, signal })`.
 
 In the default **Server** mode that's `serverSpeech.transcribe`
-(`lib/engines/server.ts:357`), which encodes the samples as a WAV file
+(`lib/engines/server.ts:358`), which encodes the samples as a WAV file
 (`lib/audio/wav.ts:4`) and POSTs it to `/api/transcribe`.
 
 On the server, `app/api/transcribe/route.ts:16` checks the passcode, enforces a size limit,
 decodes and validates the WAV, then calls `transcribeWithFallback`
-(`lib/core/transcribe.ts:27`), which calls Speaches. If Whisper's auto-detected language
+(`lib/core/transcribe.ts:28`), which calls Speaches. If Whisper's auto-detected language
 isn't Korean or English (it often mislabels short clips as Japanese), it retries once forced
 to Korean.
 
@@ -136,19 +137,22 @@ Back in the queue:
   lines get `status: 'skipped'` and are hidden.
 - `pickDirection` (`lib/pipeline/direction.ts:22`): in Auto mode, Korean speech is translated
   to English and English speech to Korean.
+- If this line and the previous one look like one sentence cut in two, `rejoin` transcribes
+  their audio again as one clip and splits the text where the first clip ended, fixing a word
+  the cut broke (chapter 06, Part 8).
 - The utterance is patched to `status: 'translating'` with its `sourceText`. The Korean text
   appears on screen.
 
 ### 6. Translation, streamed
 
-`runTranslate` (`lib/pipeline/queue.ts:244`) builds a request with the text, the last 5
+`runTranslate` (`lib/pipeline/queue.ts:332`) builds a request with the text, the last 5
 finished lines as **context**, the glossary and the meeting description, then calls
 `engine.translate(request, onDelta, signal)`.
 
 Server mode POSTs to `/api/translate`. The route (`app/api/translate/route.ts:23`) calls
 `startTranslation` (`lib/core/translate.ts:26`), which builds the prompt
 (`lib/prompts/translate.ts:15`) and opens a **streamed** chat completion with the LLM
-(`lib/core/openai-compatible.ts:318`). The LLM sends its answer a few tokens at a time as
+(`lib/core/openai-compatible.ts:322`). The LLM sends its answer a few tokens at a time as
 Server-Sent Events. The server removes any `<think>…</think>` reasoning
 (`lib/core/think-stripper.ts`) and forwards plain text to the browser as it arrives
 (`lib/server/http.ts:176`).

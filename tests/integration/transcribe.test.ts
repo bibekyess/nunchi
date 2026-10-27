@@ -54,7 +54,25 @@ describe('POST /api/transcribe', () => {
     expect(sent?.get('prompt')).toBe('지민');
     expect(sent?.get('temperature')).toBe('0');
     expect(sent?.get('response_format')).toBe('verbose_json');
+    expect(sent?.getAll('timestamp_granularities[]')).toEqual([]); // words cost time; ask only when needed
     expect(sent?.get('file')).toBeInstanceOf(Blob);
+  });
+
+  it('asks Speaches for word timings when the client wants them, and passes them on', async () => {
+    let sent: FormData | undefined;
+    server.use(
+      http.post(`${SPEACHES}/audio/transcriptions`, async ({ request }) => {
+        sent = await request.formData();
+        return HttpResponse.json({
+          ...verbose('I went to hospital', 'en'),
+          words: [{ word: ' hospital', start: 0.5, end: 0.9 }],
+        });
+      }),
+    );
+    const res = await POST(request({ audio: wavBlob(), words: '1' }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).words).toEqual([{ word: ' hospital', start: 0.5, end: 0.9 }]);
+    expect(sent?.getAll('timestamp_granularities[]')).toEqual(['word', 'segment']);
   });
 
   it('sends Speaches the recorded clip byte for byte', async () => {

@@ -2,6 +2,32 @@
 
 Changes to, or details not covered by, the implementation plan. Newest first.
 
+## 2026-10-27 — Rejoining lines cut mid-word
+
+When the VAD cuts a pause inside a word, Whisper mishears both halves ("I went to hoss" /
+"petal for checkup"). `lib/pipeline/rejoin.ts` and the queue fix it from the audio.
+
+- **Audio, not an LLM:** an LLM reading "hoss petal" can only guess "hospital", and a wrong
+  guess with confidence is worse than a visible broken word. Transcribing the two clips again
+  as one lets Whisper hear the whole word.
+- **Split by word timings, not an LLM:** the first clip's length is exactly where the cut
+  was, so the text is split there using Whisper's word timings. This is deterministic and
+  costs no extra call. Timings are requested only for this call (`words: true`), because
+  they are slower on the server.
+- **Without timings, merge:** some endpoints don't return word timings. Then the two lines
+  become one. If timings exist but don't fit the text, both lines are kept as heard.
+- **No text-only fallback:** the audio is always in the browser, whatever the engine, so
+  the only case without it is a reloaded page.
+- **Change once:** the previous line's new translation is done out of sight and patched
+  together with its text. A line is revised at most once, and a line split off by a rejoin
+  is never joined again (its audio still starts with the tail of the cut word).
+- **Clips never overlap:** MicVAD empties its buffer at every segment end. A negative gap
+  only comes from the approximate `startedAt`, so `joinAudio` never trims audio.
+- **Split long monologues at a pause:** after 22 s, the recorder splits at the first quiet
+  frame instead of cutting mid-word at 25 s (still the hard limit).
+- **Open:** the extra Whisper call delays rejoin-eligible lines. How often it fires on real
+  Korean speech (where Whisper may omit or add final punctuation) still needs measuring.
+
 ## 2026-10-18 — Server logs
 
 `lib/server/log.ts` replaces the timing lines of `lib/server/timing.ts` with a small logger of

@@ -85,7 +85,7 @@ async run<T>(task: () => Promise<T>): Promise<T>
 ### `satisfies`: check without changing the type
 
 ```ts
-// lib/api/contract.ts:32
+// lib/api/contract.ts:36
 export const translateBodySchema = z.object({ ... }) satisfies z.ZodType<TranslateRequest>;
 ```
 
@@ -136,7 +136,7 @@ pings both upstreams at once).
 ### Fire and forget: `void promise`
 
 ```ts
-void this.runTranscribe(id); // lib/pipeline/queue.ts:72
+void this.runTranscribe(id); // lib/pipeline/queue.ts:79
 ```
 
 This starts the job without waiting for it. `void` tells the linter "yes, I meant not to
@@ -156,7 +156,7 @@ controller.abort();
 The repo passes signals **everywhere**: when you leave a session page, one `abort()` stops
 every in-flight request. Two helpers you'll see:
 
-- `AbortSignal.any([a, b])`: aborts when either aborts (`lib/pipeline/queue.ts:193`).
+- `AbortSignal.any([a, b])`: aborts when either aborts (`lib/pipeline/queue.ts:202`).
 - `AbortSignal.timeout(ms)`: aborts after a delay.
 
 Code often checks `if (signal.aborted) return;` after an `await`, because the world may have

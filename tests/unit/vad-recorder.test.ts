@@ -31,10 +31,13 @@ vi.mock('@ricky0123/vad-web', () => ({
   },
 }));
 
-const { MAX_UTTERANCE_MS, SpeechRecorder } = await import('@/lib/audio/vad');
+const { MAX_UTTERANCE_MS, SPLIT_AT_PAUSE_MS, SpeechRecorder } = await import('@/lib/audio/vad');
 const { DEFAULT_VAD_SETTINGS } = await import('@/lib/audio/vad-settings');
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe('SpeechRecorder force-split', () => {
   it('does not restart (or throw) when destroyed while pausing', async () => {
@@ -80,5 +83,34 @@ describe('SpeechRecorder force-split', () => {
     vi.useRealTimers();
     await new Promise((r) => setTimeout(r, 10));
     expect(fake.vad.start).not.toHaveBeenCalled();
+  });
+});
+
+describe('SpeechRecorder split at a pause', () => {
+  const frame = new Float32Array(512);
+  const quiet = { isSpeech: 0.1, notSpeech: 0.9 };
+  const talking = { isSpeech: 0.9, notSpeech: 0.1 };
+
+  it('splits a long line at its first quiet frame, once', async () => {
+    let now = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    fake.vad.pause.mockClear();
+    const recorder = await SpeechRecorder.create({} as MediaStream, DEFAULT_VAD_SETTINGS, {
+      onClip: vi.fn(),
+    });
+    await recorder.start();
+    const { onSpeechStart, onFrameProcessed } = fake.state.options!;
+
+    onSpeechStart();
+    onFrameProcessed(quiet, frame); // a pause this early ends nothing
+    now = SPLIT_AT_PAUSE_MS;
+    onFrameProcessed(talking, frame);
+    expect(fake.vad.pause).not.toHaveBeenCalled();
+
+    onFrameProcessed(quiet, frame);
+    onFrameProcessed(quiet, frame); // one split at a time
+    expect(fake.vad.pause).toHaveBeenCalledTimes(1);
+    fake.state.pauses.splice(0).forEach((release) => release());
+    await recorder.destroy();
   });
 });

@@ -5,7 +5,7 @@ VAD produces becomes a **job**: transcribe → filter → choose direction → t
 chapter explains how jobs run in parallel without chaos, survive bad networks, and stop
 cleanly.
 
-It's under 300 lines, and it's worth reading in full after this chapter.
+It's about 450 lines, and it's worth reading in full after this chapter.
 
 ---
 
@@ -22,6 +22,7 @@ It's under 300 lines, and it's worth reading in full after this chapter.
         runTranscribe(id) ──── waits for transcribeSlots (2) ───► engine.transcribe
                │                                                   (retries 1 s, 3 s)
                ├─ dropped by filter ──► status 'skipped'
+               ├─ cut mid-sentence? ──► rejoin with the previous line (Part 8)
                ▼
         status 'translating', sourceText set; clips.delete(id)     ← audio no longer needed
                ▼
@@ -40,20 +41,20 @@ store** through `deps.getState()`. Why?
 - There's **one source of truth**. The UI renders from the store, persistence saves from
   the store, and the queue updates the store. Nothing gets out of sync.
 - After a reload, the session's saved lines are loaded into the store, and a new queue just
-  continues from them: `nextSeq` starts after the last saved `seq` (`queue.ts:49`).
+  continues from them: `nextSeq` starts after the last saved `seq` (`queue.ts:56`).
 
-The only thing the queue keeps privately is **audio** (`clips`, line 38) and the abort
-controllers of running jobs (`jobs`, line 40). Audio is never stored in the state or the
+The only thing the queue keeps privately is **audio** (`clips`, line 39) and the abort
+controllers of running jobs (`jobs`, line 41). Audio is never stored in the state or the
 database. It's kept just long enough to retry a failed transcription and released as soon as
-transcription succeeds (line 224).
+transcription succeeds (line 234), except the latest line's clip, kept for a rejoin (Part 8).
 
 ---
 
 ## Part 2: Concurrency: why "2 at a time"
 
 ```ts
-export const CONCURRENCY = 2;                                   // queue.ts:11
-private readonly transcribeSlots = new Semaphore(CONCURRENCY);  // queue.ts:41
+export const CONCURRENCY = 2;                                   // queue.ts:12
+private readonly transcribeSlots = new Semaphore(CONCURRENCY);  // queue.ts:48
 private readonly translateSlots  = new Semaphore(CONCURRENCY);
 ```
 
@@ -102,7 +103,7 @@ newcomer jumping the queue. DECISIONS.md (2026-10-17, "Semaphore") records the f
 
 Two jobs run in parallel, so line 8 can finish before line 7. That's fine, because:
 
-- every utterance gets a `seq` number **when the clip arrives** (`queue.ts:65`), in speech
+- every utterance gets a `seq` number **when the clip arrives** (`queue.ts:72`), in speech
   order,
 - the store keeps `ids` sorted by `seq` (`addUtterance`, `lib/session/store.ts:175`),
 - the UI renders `ids` in order, and each line fills in whenever its job finishes.
@@ -134,7 +135,7 @@ the transport (HTTP today, a Web Worker tomorrow).
 
 ### `withRetries`
 
-`queue.ts:126`:
+`queue.ts:135`:
 
 ```ts
 for (let i = 0; ; i++) {
@@ -164,7 +165,7 @@ retries"_). If both layers retried, one failure could become 3 × 3 = 9 requests
 
 ### Manual retries
 
-- `retry(id)` (`queue.ts:77`) restarts a failed line **from where it failed**: if the audio is
+- `retry(id)` (`queue.ts:84`) restarts a failed line **from where it failed**: if the audio is
   still in memory, re-transcribe; else if the text exists, re-translate only.
 - `retryAllFailed()` backs the "Retry all failed" banner. Retries use whatever engine is
   chosen _at retry time_, so switching to a working engine and pressing "Retry all" recovers a
@@ -177,16 +178,16 @@ retries"_). If both layers retried, one failure could become 3 × 3 = 9 requests
 ## Part 5: Bounded memory: the 50-clip cap
 
 Offline, clips accumulate in memory. At 16 kHz, 50 clips of a few seconds each are roughly
-15 MB (`MAX_PENDING_CLIPS`, `queue.ts:14`). Past the cap, `evictOldClips` (`queue.ts:147`)
+15 MB (`MAX_PENDING_CLIPS`, `queue.ts:15`). Past the cap, `evictOldClips` (`queue.ts:156`)
 drops the oldest: its audio is released, **its job is aborted**, and its line shows
 "Dropped: too many clips waiting for the network".
 
 Two details from the hardening pass (DECISIONS.md 2026-10-17, "Dropped clips are really
 dropped"):
 
-- Each job has its **own** `AbortController` (`queue.ts:191`), combined with the queue-wide
+- Each job has its **own** `AbortController` (`queue.ts:200`), combined with the queue-wide
   one by `AbortSignal.any`. Evicting a clip cancels exactly that job.
-- The job doesn't hold the audio while waiting. It calls `audio()` (`queue.ts:195`) at the
+- The job doesn't hold the audio while waiting. It calls `audio()` (`queue.ts:204`) at the
   moment it sends. A dropped clip is really freed, and a dropped line is never transcribed
   later when the network returns.
 
@@ -197,11 +198,11 @@ dropped"):
 When the user leaves the session page, everything must stop: no more requests, and no more
 writes to a store that now shows a different session.
 
-- `dispose()` (`queue.ts:99`) aborts the queue's controller. Every running job's signal is
+- `dispose()` (`queue.ts:106`) aborts the queue's controller. Every running job's signal is
   derived from it, so every `fetch` is cancelled.
-- `patch()` and `fail()` check `this.signal.aborted` first (`queue.ts:109-120`), so a late
+- `patch()` and `fail()` check `this.signal.aborted` first (`queue.ts:118-129`), so a late
   answer arriving after dispose is ignored.
-- `enqueue()` returns early once disposed (`queue.ts:59`), because the recorder can still
+- `enqueue()` returns early once disposed (`queue.ts:66`), because the recorder can still
   deliver a final clip while it is being torn down.
 - `fail()` ignores `AbortError`: a cancellation is not a failure and shouldn't show an error.
 
@@ -215,7 +216,7 @@ soon as it opens (DECISIONS.md 2026-10-17, "Leaving mid-start closes the mic").
 
 ## Part 7: Dependency injection makes it testable
 
-The constructor takes everything from outside (`QueueDeps`, `queue.ts:16`):
+The constructor takes everything from outside (`QueueDeps`, `queue.ts:17`):
 
 ```ts
 export interface QueueDeps {
@@ -236,9 +237,41 @@ The real wiring is in `SessionController`'s constructor (`lib/session/controller
   wants, which makes "line 8 finishes before line 7" easy to reproduce.
 - `waitForOnline` that never resolves, to simulate being offline.
 
-`engines` is a **function**, called for each job (`queue.ts:202`, `:261`). Change the engine
+`engines` is a **function**, called for each job (`queue.ts:211`, `:403`). Change the engine
 in Processing settings mid-meeting and the very next line uses the new one (DECISIONS.md,
 Engines Phase 1).
+
+## Part 8: Rejoining a line cut mid-word
+
+The VAD ends a line after 600 ms of quiet, and people pause mid-sentence. When a pause falls
+inside a word, Whisper mishears both halves:
+
+```
+heard:   "I went to hoss"   │ "petal for checkup"
+fixed:   "I went to hospital" │ "for checkup"
+```
+
+`rejoin` (in `runTranscribe`) fixes this with the audio, not by guessing from the text. When
+`shouldRejoin` (`lib/pipeline/rejoin.ts`) says the new line probably continues the previous
+one (same language, at most a 700 ms audio gap, together at most 25 s, and the previous line
+doesn't end like a sentence), the queue:
+
+1. **Joins the two clips** (`joinAudio`), with up to 150 ms of silence between them. To make
+   this possible, the queue keeps the latest line's clip (`recent`) after transcription.
+2. **Transcribes them again as one clip, with word timings** (`words: true`). Timings are
+   slower to compute, so only this call asks for them.
+3. **Splits the text where the first clip ended** (`splitAtBoundary`). Each word goes to the
+   half its middle falls in, and Whisper's own spacing and punctuation are kept.
+4. **Revises the previous line** (`revise`). Its new translation is done out of sight, and
+   the text and translation are swapped in together, so the row changes once (with a fade).
+   A translation still streaming for it is cancelled first (`beginTranslation`).
+
+The new line waits on its shimmer during the second call, so it simply appears correct.
+Without word timings (some servers don't send them), the two lines merge into one and the
+new line becomes `skipped`. Any failure, or timings that don't fit the text, keeps both lines
+as heard. Each line changes at most once: a line is revised only once (`revised`), and a line
+split off by a rejoin never becomes `recent`, because its audio still starts with the tail of
+the cut word.
 
 ## Try it
 
@@ -249,5 +282,5 @@ Engines Phase 1).
 3. Change `CONCURRENCY` to `1` and speak several short lines quickly. Notice the lag build up.
    Put it back.
 4. Explain why `runTranscribe` reads `this.deps.getState().session?.mode ?? mode` again after
-   transcription (`queue.ts:237`) instead of reusing the `mode` from the start of the job.
+   transcription (`queue.ts:247`) instead of reusing the `mode` from the start of the job.
    (Hint: what can the user change while a job is waiting?)

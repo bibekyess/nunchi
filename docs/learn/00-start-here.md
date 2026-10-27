@@ -102,7 +102,7 @@ for three different environments:
 | Term                  | Meaning                                                                                                                |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | **Utterance**         | One spoken line: its audio clip, transcript, translation and status. The core data type (`lib/types.ts:13`).           |
-| **Clip**              | The raw audio of one utterance, as `Float32Array` samples at 16 kHz (`lib/audio/vad.ts:9`).                            |
+| **Clip**              | The raw audio of one utterance, as `Float32Array` samples at 16 kHz (`lib/audio/vad.ts:11`).                           |
 | **Session**           | One meeting: title, language mode, glossary, list of utterances, summary (`lib/types.ts:33`).                          |
 | **VAD**               | Voice Activity Detection: a small model that decides "is someone speaking right now?"                                  |
 | **Silero**            | The VAD model used (Silero VAD v5), run in the browser via ONNX Runtime.                                               |

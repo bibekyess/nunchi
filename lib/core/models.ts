@@ -33,6 +33,8 @@ export interface ChatModel {
 export interface SpeechOptions {
   language?: Lang; // omit for auto-detect
   prompt?: string;
+  /** Also return word timings (slower on the server, so only when needed). */
+  words?: boolean;
   signal?: AbortSignal;
 }
 

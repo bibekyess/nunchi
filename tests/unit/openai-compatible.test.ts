@@ -77,6 +77,12 @@ describe('parseTranscription', () => {
     });
   });
 
+  it('maps word timings when the server sends them', () => {
+    expect(
+      parseTranscription({ text: 'hi there', words: [{ word: ' hi', start: 0, end: 0.4 }] }).words,
+    ).toEqual([{ word: ' hi', start: 0, end: 0.4 }]);
+  });
+
   it('accepts plain json with only text', () => {
     expect(parseTranscription({ text: 'hi' })).toEqual({
       text: 'hi',

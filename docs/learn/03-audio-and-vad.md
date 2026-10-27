@@ -194,7 +194,7 @@ time it says "speech started" the first syllable has already passed. Keeping the
 
 `lib/audio/vad.ts` wraps `MicVAD`. Each choice below is deliberate.
 
-**1. We own the stream, not MicVAD** (DECISIONS.md Phase 1). Look at `vad.ts:55-57`:
+**1. We own the stream, not MicVAD** (DECISIONS.md Phase 1). Look at `vad.ts:62-64`:
 
 ```ts
 getStream: async () => stream,
@@ -205,25 +205,26 @@ resumeStream: async () => stream,
 If MicVAD stopped the tracks on pause, resuming would open the mic again, and some browsers
 ask for permission again. Keeping the stream open makes pause and resume instant and silent.
 
-**2. It loads lazily.** `await import('@ricky0123/vad-web')` (`vad.ts:43`) downloads the model
+**2. It loads lazily.** `await import('@ricky0123/vad-web')` (`vad.ts:50`) downloads the model
 and WASM (~16 MB) only when you first tap the mic, not when the home page loads.
 `scripts/copy-vad-assets.mjs` copies those files into `public/vad/` at install time, so
 they're served from this app's own origin. That matters for the Content Security Policy
 (chapter 07), which also had to allow `'wasm-unsafe-eval'` and `blob:` workers.
 
-**3. One WASM thread.** `ort.env.wasm.numThreads = 1` (`vad.ts:50`). Multi-threaded WASM needs
+**3. One WASM thread.** `ort.env.wasm.numThreads = 1` (`vad.ts:57`). Multi-threaded WASM needs
 special cross-origin isolation headers, and one thread is plenty for a 2 MB model
 (DECISIONS.md Phase 1).
 
 **4. Force-split long monologues.** Whisper processes audio in **30-second windows** (chapter
-04), so a 40-second clip would lose text. When speech starts, a 25-second timer starts too
-(`MAX_UTTERANCE_MS`, `vad.ts:7`). If it fires, `forceSplit()` (`vad.ts:121`) pauses the VAD,
-which with `submitUserSpeechOnPause: true` emits the audio so far as a clip, then starts it
-again. Note the guard on line 127: if the user pressed Stop or left the page during that
+04), so a 40-second clip would lose text. After 22 seconds of speech (`SPLIT_AT_PAUSE_MS`),
+the first quiet frame calls `forceSplit()` (`vad.ts:136`), so the cut falls between words.
+A 25-second timer (`MAX_UTTERANCE_MS`, `vad.ts:7`) cuts anyway if no pause comes.
+`forceSplit()` pauses the VAD, which with `submitUserSpeechOnPause: true` emits the audio so
+far as a clip, then starts it again. Note the guard on line 144: if the user pressed Stop or left the page during that
 `await`, don't restart. That was a real bug, fixed in the hardening pass (DECISIONS.md
 2026-10-17).
 
-**5. Live tuning.** `updateSettings()` (`vad.ts:67`) calls `MicVAD.setOptions(...)`, so moving
+**5. Live tuning.** `updateSettings()` (`vad.ts:74`) calls `MicVAD.setOptions(...)`, so moving
 a slider in Audio settings applies immediately without reopening the mic.
 
 **6. Callbacks, not coupling.** The recorder knows nothing about queues or stores. It takes
