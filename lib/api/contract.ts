@@ -31,6 +31,7 @@ export const transcribeFieldsSchema = z.object({
     .literal('1')
     .optional()
     .transform((v) => v === '1'),
+  hint: langSchema.optional().catch(undefined), // advice only: a bad value is dropped
 }) satisfies z.ZodType<Omit<TranscribeOptions, 'signal'>>;
 
 export const translateBodySchema = z.object({

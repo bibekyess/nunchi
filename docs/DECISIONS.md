@@ -2,6 +2,31 @@
 
 Changes to, or details not covered by, the implementation plan. Newest first.
 
+## 2026-10-30 — Short clips heard as English; rejoin narrowed
+
+After the rejoin change, Korean speech sometimes showed up as English text. The server logs
+(Korean session, 371 calls) showed two separate problems.
+
+- **English for Korean is short clips:** Whisper labelled 54% of clips under 2 s as English
+  and 32% as another unsupported language; over 8 s it was 94% Korean. The fallback only caught
+  unsupported languages, so a wrong "en" was kept, and Whisper wrote English text. Now the
+  queue sends the previous line's language as `hint` (auto mode only). After a Korean line, a
+  clip under 2.5 s heard as English is transcribed again in Korean, kept only if its mean
+  `avgLogprob` is strictly higher (servers without scores report 0, so the first guess stays).
+  Only this direction: checking every disagreement would turn a correct "네." after an English
+  line into "Yes.". Unsupported guesses still retry in Korean.
+- **Rejoin fired on about one line in five,** not only on cut words: a 700 ms gap allowed
+  ~1.6 s of real silence, and Korean lines often end without punctuation. Each rejoin rewrote
+  the previous line from a re-split long clip, and could hide the new line. Now the gap is
+  100 ms (~1 s of real silence with default settings), Korean endings (다/요/죠/까/네) count as
+  a finished sentence, and a rejoin without word timings or with an empty half keeps both
+  lines as heard, so it never hides a line.
+- **A switch:** Audio settings → "Rejoin words cut by a pause" (stored with the speech
+  detection settings, applied live) turns rejoin off, to compare with and without it.
+- **Open:** whether the logprob comparison picks right on real short English replies in a
+  Korean meeting. The `fallback` log field (`hint-used` / `hint-kept`) shows how often each
+  wins.
+
 ## 2026-10-27 — Rejoining lines cut mid-word
 
 When the VAD cuts a pause inside a word, Whisper mishears both halves ("I went to hoss" /

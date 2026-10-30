@@ -285,6 +285,13 @@ export function AudioSettingsDialog({ open, onClose }: { open: boolean; onClose:
           {...VAD_LIMITS.minSpeechMs}
           onChange={(minSpeechMs) => updateVad({ minSpeechMs })}
         />
+        <Switch
+          className="mt-4"
+          checked={vad.rejoin}
+          onChange={(rejoin) => updateVad({ rejoin })}
+          label="Rejoin words cut by a pause"
+          description="Turn off if lines get rewritten wrongly."
+        />
         <Button
           variant="ghost"
           size="sm"

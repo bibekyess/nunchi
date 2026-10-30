@@ -3,15 +3,16 @@ import { SAMPLE_RATE } from '@/lib/audio/wav';
 import type { TranscriptionWord } from '@/lib/types';
 
 // Speech detection sometimes cuts a line mid-word ("I went to hos" / "pital for checkup"), and
-// Whisper then mishears both halves. When two lines look like one thought cut in two, their
+// Whisper then mishears both halves. When two lines look like one word cut in two, their
 // audio is transcribed again as one clip and the text is split back at the original cut.
 
 /**
- * Longest audio gap between two clips that may still be one thought. Each clip already ends
- * with the detector's silence (redemptionMs) and the next starts with its pre-speech pad, so
- * with default settings this allows roughly a second and a half of real silence.
+ * Longest audio gap between two clips that may still be one word cut in two. Each clip already
+ * ends with the detector's silence (redemptionMs) and the next starts with its pre-speech pad,
+ * so with default settings this allows about 1 s of real silence. Longer pauses are sentence
+ * breaks.
  */
-export const REJOIN_MAX_GAP_MS = 700;
+export const REJOIN_MAX_GAP_MS = 100;
 
 /** Silence put between the two clips when they are joined, at most. */
 export const JOIN_SILENCE_MS = 150;
@@ -31,14 +32,18 @@ export function gapMs(prev: Clip, next: Clip): number {
 }
 
 const SENTENCE_END = /[.?!。？！…][\p{Pe}\p{Pf}"']*$/u;
+/** Korean sentence endings (했습니다, 했어요, 그렇죠, 할까, 좋네), which Whisper often leaves unpunctuated. */
+const KO_SENTENCE_END = /[다요죠까네]$/u;
 
-/** Whether `next` most likely continues `prev`, cut off mid-sentence. */
+/** Whether `next` most likely continues `prev`, cut off mid-word. */
 export function shouldRejoin(prev: RejoinLine, next: RejoinLine): boolean {
+  const text = prev.text.trim();
   return (
     prev.lang === next.lang &&
     prev.clip.durationMs + next.clip.durationMs <= MAX_UTTERANCE_MS &&
     gapMs(prev.clip, next.clip) <= REJOIN_MAX_GAP_MS &&
-    !SENTENCE_END.test(prev.text.trim())
+    !SENTENCE_END.test(text) &&
+    !(prev.lang === 'ko' && KO_SENTENCE_END.test(text))
   );
 }
 

@@ -249,6 +249,24 @@ describe('PipelineQueue', () => {
     expect(state().byId[id]).toMatchObject({ status: 'done', translation: '네.' });
   });
 
+  it("hints the previous line's language in auto mode only", async () => {
+    const transcribe = vi.fn(async () => tr('안녕하세요.'));
+    const q = new PipelineQueue(makeDeps({ transcribe }));
+    q.enqueue(clip());
+    await flush();
+    q.enqueue(clip());
+    await flush();
+    expect(transcribe.mock.calls.map((c) => (c as unknown[])[1])).toMatchObject([
+      { hint: undefined },
+      { hint: 'ko' },
+    ]);
+
+    state().setMode({ source: 'ko', target: 'en' });
+    q.enqueue(clip());
+    await flush();
+    expect((transcribe.mock.calls[2] as unknown[])[1]).toMatchObject({ hint: undefined });
+  });
+
   it('sends the five most recent finished lines as context, and the glossary', async () => {
     state().setGlossary([{ term: '지민', translation: 'Jimin' }]);
     const bodies: TranslateRequest[] = [];
@@ -478,12 +496,37 @@ describe('PipelineQueue', () => {
       ]);
     });
 
-    it('merges the two lines when the server gives no word timings', async () => {
+    it('keeps both lines as heard when the server gives no word timings', async () => {
       await speak('I went to hoss', async () => joined(false));
       expect(ordered().map((u) => [u.status, u.sourceText])).toEqual([
-        ['done', 'I went to hospital for checkup'],
-        ['skipped', undefined],
+        ['done', 'I went to hoss'],
+        ['done', 'petal for checkup'],
       ]);
+    });
+
+    it('never hides a line whose words all land in the earlier one', async () => {
+      await speak('I went to hoss', async () => ({
+        ...joined(),
+        words: words.map((w) => ({ ...w, start: 0, end: 0.1 })),
+      }));
+      expect(ordered().map((u) => [u.status, u.sourceText])).toEqual([
+        ['done', 'I went to hoss'],
+        ['done', 'petal for checkup'],
+      ]);
+    });
+
+    it('does nothing when switched off in the audio settings', async () => {
+      const transcribe = vi
+        .fn()
+        .mockResolvedValueOnce(tr('I went to hoss', 'en'))
+        .mockResolvedValueOnce(tr('petal for checkup', 'en'));
+      const q = new PipelineQueue(makeDeps({ transcribe, translate, rejoinEnabled: () => false }));
+      q.enqueue(clip(1000, 0));
+      await flush();
+      q.enqueue(clip(1000, 1000));
+      for (let i = 0; i < 5; i++) await flush();
+      expect(transcribe).toHaveBeenCalledTimes(2);
+      expect(ordered().map((u) => u.sourceText)).toEqual(['I went to hoss', 'petal for checkup']);
     });
 
     it('keeps both lines as heard when the word timings do not fit the text', async () => {

@@ -33,6 +33,8 @@ export class SessionController {
   private busy = false;
   /** Set by dispose(); a start() still in progress checks it after every step. */
   private disposed = false;
+  /** Whether the queue rejoins lines cut mid-word; follows the Audio settings live. */
+  private rejoinEnabled = loadVadSettings().rejoin;
 
   constructor() {
     this.queue = new PipelineQueue({
@@ -41,6 +43,7 @@ export class SessionController {
       newId: () => crypto.randomUUID(),
       sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
       waitForOnline,
+      rejoinEnabled: () => this.rejoinEnabled,
     });
     document.addEventListener('visibilitychange', this.onVisibility);
   }
@@ -152,6 +155,7 @@ export class SessionController {
 
   /** Speech detection settings apply live, without reopening the input. */
   applyVadSettings(settings: VadSettings) {
+    this.rejoinEnabled = settings.rejoin;
     this.recorder?.updateSettings(settings);
   }
 

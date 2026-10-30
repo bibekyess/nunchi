@@ -22,7 +22,7 @@ It's about 450 lines, and it's worth reading in full after this chapter.
         runTranscribe(id) ──── waits for transcribeSlots (2) ───► engine.transcribe
                │                                                   (retries 1 s, 3 s)
                ├─ dropped by filter ──► status 'skipped'
-               ├─ cut mid-sentence? ──► rejoin with the previous line (Part 8)
+               ├─ cut mid-word?     ──► rejoin with the previous line (Part 8)
                ▼
         status 'translating', sourceText set; clips.delete(id)     ← audio no longer needed
                ▼
@@ -253,8 +253,9 @@ fixed:   "I went to hospital" │ "for checkup"
 
 `rejoin` (in `runTranscribe`) fixes this with the audio, not by guessing from the text. When
 `shouldRejoin` (`lib/pipeline/rejoin.ts`) says the new line probably continues the previous
-one (same language, at most a 700 ms audio gap, together at most 25 s, and the previous line
-doesn't end like a sentence), the queue:
+one (same language, at most a 100 ms audio gap, together at most 25 s, and the previous line
+doesn't end like a sentence, including Korean endings like 다/요/죠 without punctuation), the
+queue:
 
 1. **Joins the two clips** (`joinAudio`), with up to 150 ms of silence between them. To make
    this possible, the queue keeps the latest line's clip (`recent`) after transcription.
@@ -267,11 +268,11 @@ doesn't end like a sentence), the queue:
    A translation still streaming for it is cancelled first (`beginTranslation`).
 
 The new line waits on its shimmer during the second call, so it simply appears correct.
-Without word timings (some servers don't send them), the two lines merge into one and the
-new line becomes `skipped`. Any failure, or timings that don't fit the text, keeps both lines
-as heard. Each line changes at most once: a line is revised only once (`revised`), and a line
-split off by a rejoin never becomes `recent`, because its audio still starts with the tail of
-the cut word.
+Without word timings (some servers don't send them), any failure, timings that don't fit the
+text, or a split that leaves one half empty, both lines stay as heard: a rejoin never hides a
+line. It can be turned off under Audio settings → "Rejoin words cut by a pause". Each line
+changes at most once: a line is revised only once (`revised`), and a line split off by a
+rejoin never becomes `recent`, because its audio still starts with the tail of the cut word.
 
 ## Try it
 
