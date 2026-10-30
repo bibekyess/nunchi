@@ -185,6 +185,7 @@ async function transcribeClip(audio: Blob, opts: TranscribeOptions): Promise<Tra
   form.append('language', opts.language);
   if (opts.prompt) form.append('prompt', opts.prompt);
   if (opts.words) form.append('words', '1');
+  if (opts.hint) form.append('hint', opts.hint);
   const call = await send(
     API_PATHS.transcribe,
     { method: 'POST', body: form, signal: opts.signal },

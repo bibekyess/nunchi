@@ -42,11 +42,12 @@ export const POST = withRequestLog('transcribe', async (request, log) => {
       language: form.get('language') ?? undefined,
       prompt: form.get('prompt') || undefined,
       words: form.get('words') ?? undefined,
+      hint: form.get('hint') || undefined,
     });
     if (!fields.success) {
       return jsonError('bad_request', fields.error.issues[0]?.message ?? 'Invalid fields.');
     }
-    const { language, prompt, words } = fields.data;
+    const { language, prompt, words, hint } = fields.data;
     audioBytes = audio.size;
 
     // Only the clips the app records are accepted; Speaches gets them re-encoded unchanged.
@@ -58,16 +59,16 @@ export const POST = withRequestLog('transcribe', async (request, log) => {
       throw err;
     }
 
-    const { result, firstMs, fallbackMs } = await transcribeWithFallback(serverSpeech, samples, {
-      language,
-      prompt,
-      words,
-      signal: request.signal,
-    });
+    const { result, firstMs, fallbackMs, fallback } = await transcribeWithFallback(
+      serverSpeech,
+      samples,
+      { language, prompt, words, hint, signal: request.signal },
+    );
 
     log.done('ok', {
       speachesMs: firstMs,
       fallbackMs,
+      fallback,
       audioMs: result.durationMs,
       sizeKb: Math.round(audio.size / 1024),
       lang: result.language ?? 'none',

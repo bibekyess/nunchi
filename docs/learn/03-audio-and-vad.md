@@ -173,6 +173,7 @@ probability
 | `redemptionMs`               | 600 ms           | how long silence must last before the line **ends**               |
 | `minSpeechMs`                | 400 ms           | shorter "speech" is a **misfire** (cough, click) and is discarded |
 | `PRE_SPEECH_PAD_MS`          | 300 ms           | audio from _before_ the start is included                         |
+| `rejoin`                     | on               | re-hears two lines as one when a pause seems to cut a word        |
 
 **Why two thresholds?** This is called **hysteresis**. With a single threshold, a probability
 hovering around 0.5 would flip between speech and silence on every frame. A lower "end"

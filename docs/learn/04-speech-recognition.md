@@ -214,21 +214,30 @@ Notes on the design:
 ## Part 5: When language detection goes wrong
 
 On very short clips, "네." (yes) or "아, 그렇죠", Whisper's language detection is unreliable
-and often answers Japanese or Chinese. In Auto mode that would produce a line in the wrong
-script and pick the wrong translation direction.
+and often answers Japanese, Chinese or English. A wrong "English" is the worst case: Whisper
+then writes English text, often a loose translation or an invented phrase, for Korean speech.
+In Auto mode that also picks the wrong translation direction.
 
-`transcribeWithFallback` (`lib/core/transcribe.ts:28`):
+`transcribeWithFallback` (`lib/core/transcribe.ts:48`):
 
 ```ts
-let result = await speech.transcribe(audio, { language: forced, prompt, signal });
-if (!forced && result.text !== '' && !isLang(result.language)) {
-  // detected something other than ko/en → transcribe again, forced to Korean
-  result = await speech.transcribe(audio, { language: FALLBACK_LANG, prompt, signal });
-}
+const result = await speech.transcribe(audio, { language: forced, prompt, words, signal });
+if (forced || result.text === '') return { result, firstMs };
+const unsupported = !isLang(result.language); // not ko/en → retry in Korean, always kept
+const doubted = hint === FALLBACK_LANG && result.language !== hint && /* short, scored */ …;
+// doubted → retry in Korean, keep it only if Whisper scores it strictly higher
 ```
 
 **Why Korean?** This is a tool for following _Korean_ meetings, so Korean is the most likely
 language when detection fails (`PRIMARY_LANG` in `lib/pipeline/direction.ts:5`).
+
+**A supported but wrong guess.** In Auto mode the queue sends the previous line's language as
+a `hint`. After a Korean line, a clip under 2.5 s (`SHORT_CLIP_MS`) heard as English is also
+transcribed again in Korean, and the Korean answer is kept only if Whisper is strictly more
+confident about it (mean `avgLogprob` of the segments; servers without scores keep the first
+guess). Only this direction is checked: retrying a correct "네." in English after an English
+line would turn it into "Yes.". The log line's `fallback` field says what happened:
+`unsupported`, `hint-used` or `hint-kept`.
 
 **Why on the server, inside one request?** DECISIONS.md (Phase 0): _"saving a client round
 trip"_. The retry happens next to Speaches, not across the phone's network. Since the

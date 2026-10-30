@@ -164,6 +164,58 @@ describe('transcribeWithFallback', () => {
     expect(transcribe.mock.calls[1][1]).toMatchObject({ language: 'ko', prompt: '지민.' });
   });
 
+  describe('with a hint from the previous line', () => {
+    const scored = (text: string, language: string, avgLogprob: number): TranscriptionResult => ({
+      ...result(text, language),
+      segments: [{ text, noSpeechProb: 0.01, avgLogprob }],
+    });
+    const long = new Float32Array(16 * 3000);
+
+    it('re-hears a short clip in the hint language and keeps the more confident answer', async () => {
+      const { speech, transcribe } = fakeSpeech(
+        scored('Yes.', 'en', -0.9),
+        scored('네.', 'ko', -0.3),
+      );
+      const out = await transcribeWithFallback(speech, wav, { language: 'auto', hint: 'ko' });
+      expect(transcribe.mock.calls[1][1]).toMatchObject({ language: 'ko' });
+      expect(out.result.text).toBe('네.');
+      expect(out.fallback).toBe('hint-used');
+    });
+
+    it('keeps the first guess when it scores better or the same', async () => {
+      for (const [first, retried] of [
+        [-0.2, -0.8],
+        [0, 0], // what a server without scores reports
+      ]) {
+        const { speech } = fakeSpeech(scored('Yes.', 'en', first), scored('예스.', 'ko', retried));
+        const out = await transcribeWithFallback(speech, wav, { language: 'auto', hint: 'ko' });
+        expect(out.result.text).toBe('Yes.');
+        expect(out.fallback).toBe('hint-kept');
+      }
+    });
+
+    it('trusts auto-detect on longer clips, after an English line and without scores', async () => {
+      for (const [first, audio, hint] of [
+        [scored('Yes.', 'en', -0.9), long, 'ko'],
+        [scored('네.', 'ko', -0.9), wav, 'en'],
+        [result('Yes.', 'en'), wav, 'ko'],
+      ] as const) {
+        const { speech, transcribe } = fakeSpeech(first);
+        const out = await transcribeWithFallback(speech, audio, { language: 'auto', hint });
+        expect(transcribe).toHaveBeenCalledTimes(1);
+        expect(out.fallback).toBeUndefined();
+      }
+    });
+
+    it('still retries an unsupported language in Korean', async () => {
+      const { speech, transcribe } = fakeSpeech(result('ね', 'ja'), result('네.', undefined));
+      const out = await transcribeWithFallback(speech, long, { language: 'auto', hint: 'en' });
+      expect(transcribe.mock.calls[1][1]).toMatchObject({ language: 'ko' });
+      expect(out.result).toMatchObject({ text: '네.', language: 'ko' });
+      expect(out.fallback).toBe('unsupported');
+    });
+  });
+
   it('keeps a supported detection, a forced language and empty text as they are', async () => {
     for (const [language, first] of [
       ['auto', result('Hello', 'en')],

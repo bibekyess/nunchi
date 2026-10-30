@@ -22,6 +22,8 @@ export interface QueueDeps {
   sleep: (ms: number) => Promise<void>;
   /** Resolves once the browser is online (at once if it already is); rejects when `signal` aborts. */
   waitForOnline: (signal?: AbortSignal) => Promise<void>;
+  /** Whether lines cut mid-word are rejoined (Audio settings); read per line. On when omitted. */
+  rejoinEnabled?: () => boolean;
 }
 
 /** Thrown inside a job whose clip was dropped; ends the job without touching its row. */
@@ -166,13 +168,18 @@ export class PipelineQueue {
     }
   }
 
-  private previousSource(seq: number): string | undefined {
+  /** The last line before `seq` that has `field`, skipping hidden lines. */
+  private previous<K extends 'sourceText' | 'sourceLang'>(seq: number, field: K) {
     const { ids, byId } = this.deps.getState();
     for (let i = ids.length - 1; i >= 0; i--) {
       const u = byId[ids[i]];
-      if (u.seq < seq && u.sourceText && u.status !== 'skipped') return u.sourceText;
+      if (u.seq < seq && u[field] && u.status !== 'skipped') return u[field];
     }
     return undefined;
+  }
+
+  private previousSource(seq: number): string | undefined {
+    return this.previous(seq, 'sourceText');
   }
 
   private context(seq: number): TranslationContextItem[] {
@@ -218,6 +225,7 @@ export class PipelineQueue {
             speech.transcribe(audio(), {
               language: mode.source,
               prompt: buildWhisperPrompt(glossary, this.previousSource(u.seq)),
+              hint: mode.source === 'auto' ? this.previous(u.seq, 'sourceLang') : undefined,
               signal,
             }),
           signal,
@@ -253,10 +261,6 @@ export class PipelineQueue {
       signal,
     );
     if (signal.aborted) return;
-    if (rejoined === '') {
-      this.patch(id, { status: 'skipped' }); // all of it belonged to the previous line
-      return;
-    }
     // A line split off by a rejoin starts with the tail of the cut word: never join it again.
     if (rejoined === undefined && (!this.recent || this.recent.seq < u.seq)) {
       this.recent = { id, seq: u.seq, clip };
@@ -267,10 +271,10 @@ export class PipelineQueue {
   }
 
   /**
-   * When this line and the one before look like one thought cut in two, transcribes their
+   * When this line and the one before look like one word cut in two, transcribes their
    * audio again as one clip and splits the text where the first clip ended. The previous
-   * line is revised in place. Returns this line's text ('' when merged into the previous
-   * line), or undefined to keep both lines as heard.
+   * line is revised in place. Returns this line's new text, or undefined to keep both lines
+   * as heard.
    */
   private async rejoin(
     seq: number,
@@ -283,6 +287,7 @@ export class PipelineQueue {
     if (
       !recent ||
       !session ||
+      this.deps.rejoinEnabled?.() === false ||
       !prev?.sourceText ||
       !prev.sourceLang ||
       prev.seq !== seq - 1 ||
@@ -318,11 +323,10 @@ export class PipelineQueue {
     const lang = pickDirection(mode, result.language).sourceLang;
     if (signal.aborted || doubtful || !result.text || lang !== prev.sourceLang) return undefined;
 
-    // Without word timings the two lines become one.
-    const halves = result.words?.length
-      ? splitAtBoundary(result.text, result.words, boundaryMs)
-      : [result.text, ''];
-    if (!halves?.[0]) return undefined; // timings that don't fit the text: keep what was heard
+    // No word timings, timings that don't fit the text, or a half left empty: keep what was
+    // heard rather than hide a line.
+    const halves = splitAtBoundary(result.text, result.words, boundaryMs);
+    if (!halves?.[0] || !halves[1]) return undefined;
     const [first, rest] = halves;
     this.revised.add(prev.id);
     void this.revise(prev.id, first);

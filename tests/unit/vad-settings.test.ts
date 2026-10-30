@@ -16,12 +16,17 @@ describe('normalizeVadSettings', () => {
 
   it('clamps to the slider ranges', () => {
     const s = normalizeVadSettings({ redemptionMs: 50, speechThreshold: 0.99, minSpeechMs: 5000 });
-    expect(s).toEqual({ redemptionMs: 300, speechThreshold: 0.8, minSpeechMs: 800 });
+    expect(s).toEqual({ redemptionMs: 300, speechThreshold: 0.8, minSpeechMs: 800, rejoin: true });
   });
 
   it('snaps to the slider step without float noise', () => {
     const s = normalizeVadSettings({ redemptionMs: 649, speechThreshold: 0.351, minSpeechMs: 420 });
-    expect(s).toEqual({ redemptionMs: 600, speechThreshold: 0.35, minSpeechMs: 400 });
+    expect(s).toEqual({ redemptionMs: 600, speechThreshold: 0.35, minSpeechMs: 400, rejoin: true });
+  });
+
+  it('keeps the rejoin switch only when it is a boolean', () => {
+    expect(normalizeVadSettings({ rejoin: false }).rejoin).toBe(false);
+    expect(normalizeVadSettings({ rejoin: 'no' }).rejoin).toBe(true);
   });
 });
 

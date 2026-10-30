@@ -124,6 +124,32 @@ describe('POST /api/transcribe', () => {
     expect(body).toMatchObject({ text: '네.', language: 'ko' });
   });
 
+  it('re-hears a short clip in Korean when it is heard as English after a Korean line', async () => {
+    const languages: (FormDataEntryValue | null)[] = [];
+    server.use(
+      http.post(`${SPEACHES}/audio/transcriptions`, async ({ request }) => {
+        const lang = (await request.formData()).get('language');
+        languages.push(lang);
+        return HttpResponse.json(
+          lang
+            ? { ...verbose('네.', 'ko'), segments: [{ text: '네.', avg_logprob: -0.2 }] }
+            : { ...verbose('Yes.', 'en'), segments: [{ text: 'Yes.', avg_logprob: -0.9 }] },
+        );
+      }),
+    );
+    const res = await POST(request({ audio: wavBlob(), hint: 'ko' }));
+    expect(languages).toEqual([null, 'ko']);
+    expect(await res.json()).toMatchObject({ text: '네.', language: 'ko' });
+  });
+
+  it('ignores an unknown hint instead of failing the clip', async () => {
+    server.use(
+      http.post(`${SPEACHES}/audio/transcriptions`, () => HttpResponse.json(verbose('네.', 'ko'))),
+    );
+    const res = await POST(request({ audio: wavBlob(), hint: 'xx' }));
+    expect(res.status).toBe(200);
+  });
+
   it('rejects missing audio, oversized clips and long prompts', async () => {
     expect((await POST(request({ language: 'ko' }))).status).toBe(400);
     expect((await POST(request({ audio: wavBlob(2 * 1024 * 1024 + 1) }))).status).toBe(413);

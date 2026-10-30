@@ -110,9 +110,10 @@ In the default **Server** mode that's `serverSpeech.transcribe`
 
 On the server, `app/api/transcribe/route.ts:16` checks the passcode, enforces a size limit,
 decodes and validates the WAV, then calls `transcribeWithFallback`
-(`lib/core/transcribe.ts:28`), which calls Speaches. If Whisper's auto-detected language
+(`lib/core/transcribe.ts:48`), which calls Speaches. If Whisper's auto-detected language
 isn't Korean or English (it often mislabels short clips as Japanese), it retries once forced
-to Korean.
+to Korean. A short clip heard as English right after a Korean line is retried in Korean too,
+and the more confident answer is kept.
 
 The response looks like:
 
@@ -137,7 +138,7 @@ Back in the queue:
   lines get `status: 'skipped'` and are hidden.
 - `pickDirection` (`lib/pipeline/direction.ts:22`): in Auto mode, Korean speech is translated
   to English and English speech to Korean.
-- If this line and the previous one look like one sentence cut in two, `rejoin` transcribes
+- If this line and the previous one look like one word cut in two, `rejoin` transcribes
   their audio again as one clip and splits the text where the first clip ended, fixing a word
   the cut broke (chapter 06, Part 8).
 - The utterance is patched to `status: 'translating'` with its `sourceText`. The Korean text

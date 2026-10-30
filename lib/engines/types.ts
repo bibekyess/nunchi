@@ -34,6 +34,8 @@ export interface TranscribeOptions {
   prompt?: string;
   /** Also return word timings; used to split a re-joined line. */
   words?: boolean;
+  /** Auto mode: the previous line's language, to catch short clips misheard as English. */
+  hint?: Lang;
   signal?: AbortSignal;
 }
 

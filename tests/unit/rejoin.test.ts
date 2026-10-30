@@ -33,6 +33,13 @@ describe('shouldRejoin', () => {
     expect(shouldRejoin(line('I went to', a), line('병원', close, 'ko'))).toBe(false);
   });
 
+  it('treats a Korean sentence ending as finished, even without punctuation', () => {
+    for (const text of ['다녀왔습니다', '그렇죠', '할까', '좋네', '했어요']) {
+      expect(shouldRejoin(line(text, a, 'ko'), line('네', close, 'ko'))).toBe(false);
+    }
+    expect(shouldRejoin(line('병원에 가', a, 'ko'), line('서 검사를', close, 'ko'))).toBe(true);
+  });
+
   it('never makes a clip longer than speech detection allows', () => {
     const long = clip(0, 20_000);
     expect(shouldRejoin(line('and', long), line('then', clip(20_000, 6000)))).toBe(false);
