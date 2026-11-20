@@ -9,7 +9,8 @@ import {
 import { SpeechRecorder } from '@/lib/audio/vad';
 import { loadVadSettings, type VadSettings } from '@/lib/audio/vad-settings';
 import { getEngines } from '@/lib/engines/registry';
-import { PipelineQueue } from '@/lib/pipeline/queue';
+import { LivePreview } from '@/lib/pipeline/live-preview';
+import { CONCURRENCY, PipelineQueue } from '@/lib/pipeline/queue';
 import { getEngineChoice } from '@/lib/settings/use-engine-settings';
 import { sessionStore } from '@/lib/session/store';
 import { waitForOnline } from '@/lib/browser/online';
@@ -24,6 +25,8 @@ const STALL_MS = 1500;
  */
 export class SessionController {
   readonly queue: PipelineQueue;
+  /** Faint draft of the line being spoken, before the pause that ends it. */
+  private readonly preview: LivePreview;
   private recorder: SpeechRecorder | null = null;
   private input: AudioInput | null = null;
   private readonly wakeLock = new ScreenWakeLock();
@@ -35,6 +38,7 @@ export class SessionController {
   private disposed = false;
   /** Whether the queue rejoins lines cut mid-word; follows the Audio settings live. */
   private rejoinEnabled = loadVadSettings().rejoin;
+  private livePreviewEnabled = loadVadSettings().livePreview;
 
   constructor() {
     this.queue = new PipelineQueue({
@@ -44,6 +48,18 @@ export class SessionController {
       sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
       waitForOnline,
       rejoinEnabled: () => this.rejoinEnabled,
+    });
+    this.preview = new LivePreview({
+      audio: () => this.recorder?.speechSoFar() ?? null,
+      speech: () => getEngines().speech,
+      options: () => this.queue.draftOptions(),
+      previousText: () => this.queue.lastSource(),
+      // Drafts are extra work: skip them offline, or while real lines wait to be transcribed.
+      canRun: () =>
+        this.livePreviewEnabled &&
+        (!getEngines().speech.needsNetwork || navigator.onLine) &&
+        this.queue.activeTranscriptions < CONCURRENCY,
+      onDraft: (text) => this.store.setLiveDraft(text),
     });
     document.addEventListener('visibilitychange', this.onVisibility);
   }
@@ -70,12 +86,20 @@ export class SessionController {
       for (const track of input.tabTracks) track.addEventListener('ended', this.onTabEnded);
       this.input = input;
       const recorder = await SpeechRecorder.create(input.stream, loadVadSettings(), {
-        onClip: (clip) => this.queue.enqueue(clip),
+        onClip: (clip) => {
+          let id = '';
+          const draft = this.preview.take((late) => id && this.queue.showDraft(id, late));
+          id = this.queue.enqueue(clip, draft);
+        },
         onLevel: (level) => {
           this.lastFrameAt = performance.now();
           this.store.setMicLevel(level);
         },
-        onSpeaking: (speaking) => this.store.setSpeaking(speaking),
+        onSpeaking: (speaking) => {
+          this.store.setSpeaking(speaking);
+          if (speaking) this.preview.begin();
+          else this.preview.pause();
+        },
       });
       if (this.disposed) {
         // Left while speech detection was loading; dispose() already closed the input.
@@ -118,6 +142,7 @@ export class SessionController {
   async pause() {
     if (!this.recorder || this.store.recorder !== 'listening') return;
     await this.recorder.pause();
+    this.preview.stop();
     this.store.setSpeaking(false);
     this.store.setRecorder('paused');
     await this.wakeLock.release();
@@ -137,6 +162,7 @@ export class SessionController {
     const recorder = this.recorder;
     this.recorder = null;
     await recorder?.destroy(); // submits speech in progress
+    this.preview.stop();
     this.closeInput();
     this.store.setSpeaking(false);
     this.store.setRecorder('idle');
@@ -156,6 +182,8 @@ export class SessionController {
   /** Speech detection settings apply live, without reopening the input. */
   applyVadSettings(settings: VadSettings) {
     this.rejoinEnabled = settings.rejoin;
+    this.livePreviewEnabled = settings.livePreview;
+    if (!settings.livePreview) this.store.setLiveDraft('');
     this.recorder?.updateSettings(settings);
   }
 
@@ -163,6 +191,7 @@ export class SessionController {
     this.disposed = true;
     document.removeEventListener('visibilitychange', this.onVisibility);
     this.clearStallTimer();
+    this.preview.stop();
     void this.recorder?.destroy();
     this.recorder = null;
     this.closeInput();
@@ -174,6 +203,7 @@ export class SessionController {
     const recorder = this.recorder;
     this.recorder = null;
     await recorder?.destroy();
+    this.preview.stop();
     this.closeInput();
     await this.start();
   }

@@ -62,8 +62,16 @@ export class PipelineQueue {
     return this.clips.size;
   }
 
-  /** Adds a clip as a new utterance and starts its job. Returns its id ('' once disposed). */
-  enqueue(clip: Clip): string {
+  /** Transcriptions running or waiting (for the network or a slot); failed lines don't count. */
+  get activeTranscriptions() {
+    return this.jobs.size;
+  }
+
+  /**
+   * Adds a clip as a new utterance and starts its job. `draft` is what the live preview heard
+   * while it was spoken, shown until the real transcription. Returns its id ('' once disposed).
+   */
+  enqueue(clip: Clip, draft?: string): string {
     // A recorder can still deliver a clip while the session is being torn down.
     if (this.signal.aborted) return '';
     const { session, addUtterance } = this.deps.getState();
@@ -75,11 +83,34 @@ export class PipelineQueue {
       startedAt: clip.startedAt,
       durationMs: clip.durationMs,
       status: 'transcribing',
+      ...(draft ? { draft } : {}),
     });
     this.clips.set(id, clip);
     this.evictOldClips();
     void this.runTranscribe(id);
     return id;
+  }
+
+  /** A live-preview draft that arrived after its line became a row; ignored once transcribed. */
+  showDraft(id: string, draft: string) {
+    const u = this.deps.getState().byId[id];
+    if (u?.status === 'transcribing' && !u.sourceText) this.patch(id, { draft });
+  }
+
+  /** How the line being spoken right now would be transcribed (for live drafts). */
+  draftOptions() {
+    const { session } = this.deps.getState();
+    const source = session?.mode.source ?? 'auto';
+    return {
+      language: source,
+      prompt: buildWhisperPrompt(session?.glossary ?? [], this.previousSource(this.nextSeq)),
+      hint: source === 'auto' ? this.previous(this.nextSeq, 'sourceLang') : undefined,
+    };
+  }
+
+  /** The text of the last line so far, to drop a draft that just repeats it. */
+  lastSource(): string | undefined {
+    return this.previousSource(this.nextSeq);
   }
 
   /** Retry a failed utterance from wherever it failed. */
@@ -127,7 +158,7 @@ export class PipelineQueue {
       this.deps.getState().setNeedsAccessToken(true);
     }
     const message = err instanceof EngineError ? err.message : 'Something went wrong';
-    this.patch(id, { status: 'error', error: message });
+    this.patch(id, { status: 'error', error: message, draft: undefined });
   }
 
   /**
@@ -247,7 +278,7 @@ export class PipelineQueue {
       previousText: this.previousSource(u.seq),
     });
     if (reason) {
-      this.patch(id, { status: 'skipped', sourceText: result.text || undefined });
+      this.patch(id, { status: 'skipped', sourceText: result.text || undefined, draft: undefined });
       return;
     }
 
@@ -266,7 +297,13 @@ export class PipelineQueue {
       this.recent = { id, seq: u.seq, clip };
     }
     const text = rejoined ?? result.text;
-    this.patch(id, { sourceText: text, sourceLang, targetLang, status: 'translating' });
+    this.patch(id, {
+      sourceText: text,
+      sourceLang,
+      targetLang,
+      status: 'translating',
+      draft: undefined,
+    });
     await this.runTranslate(id);
   }
 

@@ -8,6 +8,7 @@ import { selectColumns, useDisplayStore } from '@/lib/display/store';
 import { useSessionStore } from '@/lib/session/store';
 import { useController } from '../session/controller-context';
 import { Button, cx, IconButton } from '../ui';
+import { DraftText } from './DraftText';
 
 /** Placeholder width grows with clip length so it hints at how much was said. */
 function placeholderWidth(durationMs: number) {
@@ -91,15 +92,18 @@ export const UtteranceBlock = memo(function UtteranceBlock({
   useEffect(() => {
     if (selected) block.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [selected]);
-  const [entering, setEntering] = useState(animate);
+  // A line that arrives with a live draft takes the draft line's place, so it doesn't slide in.
+  const [entering, setEntering] = useState(animate && !u?.draft);
   // Text fades in when the placeholder resolves while we watch (not on hydration), and again
-  // when a rejoin with the next line rewrites it.
+  // when a rejoin with the next line rewrites it. A draft turns into the final text in place.
   const [prevStatus, setPrevStatus] = useState(u?.status);
   const [prevSource, setPrevSource] = useState(u?.sourceText);
   const [revealing, setRevealing] = useState(false);
+  const [hadDraft, setHadDraft] = useState(Boolean(u?.draft));
+  if (u?.draft && !hadDraft) setHadDraft(true);
   if (u && u.status !== prevStatus) {
     setPrevStatus(u.status);
-    if (prevStatus === 'transcribing') setRevealing(true);
+    if (prevStatus === 'transcribing' && !hadDraft) setRevealing(true);
   }
   if (u && u.sourceText !== prevSource) {
     setPrevSource(u.sourceText);
@@ -112,6 +116,26 @@ export const UtteranceBlock = memo(function UtteranceBlock({
   const onEnterEnd = own(() => setEntering(false));
   const reveal = revealing && 'animate-fade-in';
   const onRevealEnd = own(() => setRevealing(false));
+
+  // With one language picked, every visible line reads as the main text, whichever role it has.
+  const single = view !== 'all';
+
+  if (u.status === 'transcribing' && u.draft) {
+    return (
+      <div
+        className={cx('rounded-2xl px-3 py-3', enter)}
+        onAnimationEnd={onEnterEnd}
+        aria-label="Transcribing"
+        data-status="transcribing"
+      >
+        <DraftText
+          text={u.draft}
+          startFull
+          className={single ? 'translation-text' : 'source-text'}
+        />
+      </div>
+    );
+  }
 
   if (u.status === 'transcribing') {
     return (
@@ -158,15 +182,19 @@ export const UtteranceBlock = memo(function UtteranceBlock({
 
   const parts = visibleParts(u, view);
   if (!parts.source && !parts.translation) return null;
-  // With one language picked, every visible line reads as the main text, whichever role it has.
-  const single = view !== 'all';
+  // Until the translation is finished the line reads as provisional: a shade lighter, then it
+  // settles into its full color.
+  const settling = u.status === 'translating';
   const sourceClass = cx(
-    single ? 'translation-text text-ink' : 'source-text text-ink-muted',
+    'transition-colors duration-500 ease-out',
+    single ? 'translation-text' : 'source-text',
+    single && !settling ? 'text-ink' : 'text-ink-muted',
     columns && 'md:row-start-1',
     columns && columnOf(u.sourceLang, 0),
   );
   const translationClass = cx(
-    'translation-text text-ink',
+    'translation-text transition-colors duration-500 ease-out',
+    settling ? 'text-ink-muted' : 'text-ink',
     !single && 'mt-1',
     columns && 'md:row-start-1 md:mt-0',
     columns && columnOf(u.targetLang, 1),

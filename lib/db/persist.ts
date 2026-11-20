@@ -17,7 +17,7 @@ const SETTLED: ReadonlySet<UtteranceStatus> = new Set(['done', 'skipped', 'error
  */
 export function recoverUtterance(u: Utterance): Utterance {
   if (u.status === 'transcribing') {
-    return { ...u, status: 'error', error: 'Interrupted before transcription' };
+    return { ...u, draft: undefined, status: 'error', error: 'Interrupted before transcription' };
   }
   if (u.status === 'translating') {
     return { ...u, status: 'error', error: 'Interrupted while translating' };

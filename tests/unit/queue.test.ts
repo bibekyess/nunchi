@@ -111,6 +111,47 @@ describe('PipelineQueue', () => {
     );
   });
 
+  it('shows the live draft until the transcription replaces it', async () => {
+    const pending = deferred<TranscriptionResult>();
+    const deps = makeDeps({ transcribe: vi.fn(() => pending.promise) });
+    const q = new PipelineQueue(deps);
+    const id = q.enqueue(clip(), '안녕하세');
+    expect(state().byId[id]).toMatchObject({ status: 'transcribing', draft: '안녕하세' });
+    q.showDraft(id, '안녕하세요'); // a later draft that was still on its way
+    expect(state().byId[id].draft).toBe('안녕하세요');
+
+    pending.resolve(tr('안녕하세요.'));
+    await flush();
+    expect(state().byId[id]).toMatchObject({ status: 'done', sourceText: '안녕하세요.' });
+    expect(state().byId[id].draft).toBeUndefined();
+    q.showDraft(id, 'late'); // too late: the line is final
+    expect(state().byId[id].draft).toBeUndefined();
+  });
+
+  it('drops the draft of a line whose transcription failed', async () => {
+    const transcribe = vi.fn(async () => {
+      throw new ApiError(400, 'bad_request', 'Bad audio.');
+    });
+    const q = new PipelineQueue(makeDeps({ transcribe }));
+    const id = q.enqueue(clip(), '안녕하세');
+    await flush();
+    expect(state().byId[id].status).toBe('error');
+    expect(state().byId[id].draft).toBeUndefined();
+  });
+
+  it('counts only transcriptions still running, not failed lines kept for retry', async () => {
+    const transcribe = vi.fn(async () => {
+      throw new ApiError(400, 'bad_request', 'Bad audio.');
+    });
+    const q = new PipelineQueue(makeDeps({ transcribe }));
+    q.enqueue(clip());
+    expect(q.activeTranscriptions).toBe(1);
+    q.enqueue(clip());
+    await flush();
+    expect(q.pendingClips).toBe(2); // audio kept for a retry
+    expect(q.activeTranscriptions).toBe(0);
+  });
+
   it('keeps speech order when responses arrive out of order', async () => {
     const first = deferred<TranscriptionResult>();
     const second = deferred<TranscriptionResult>();

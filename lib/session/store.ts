@@ -26,6 +26,8 @@ export interface SessionState {
   listenedMs: number;
   micLevel: number;
   speaking: boolean;
+  /** Live draft of the line being spoken right now ('' when none). */
+  liveDraft: string;
   interrupted: boolean;
   /** The user stopped sharing the tab whose audio we were transcribing. */
   sharingStopped: boolean;
@@ -52,6 +54,7 @@ export interface SessionState {
   setRecorder: (state: RecorderState, error?: { kind: string; message: string } | null) => void;
   setMicLevel: (level: number) => void;
   setSpeaking: (speaking: boolean) => void;
+  setLiveDraft: (text: string) => void;
   setInterrupted: (interrupted: boolean) => void;
   setSharingStopped: (stopped: boolean) => void;
   setNeedsAccessToken: (needs: boolean) => void;
@@ -94,6 +97,7 @@ const RESET_RECORDER = {
   listeningSince: null,
   micLevel: 0,
   speaking: false,
+  liveDraft: '',
   interrupted: false,
   sharingStopped: false,
 } as const;
@@ -108,6 +112,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
   listenedMs: 0,
   micLevel: 0,
   speaking: false,
+  liveDraft: '',
   interrupted: false,
   sharingStopped: false,
   needsAccessToken: false,
@@ -219,6 +224,9 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
     if (Math.abs(get().micLevel - micLevel) > 0.02) set({ micLevel });
   },
   setSpeaking: (speaking) => set({ speaking }),
+  setLiveDraft: (liveDraft) => {
+    if (get().liveDraft !== liveDraft) set({ liveDraft });
+  },
   setInterrupted: (interrupted) => set({ interrupted }),
   setSharingStopped: (sharingStopped) => set({ sharingStopped }),
   setNeedsAccessToken: (needsAccessToken) => set({ needsAccessToken }),
