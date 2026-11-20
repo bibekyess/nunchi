@@ -1,5 +1,5 @@
 import { samplesToMs } from '@/lib/audio/wav';
-import { isLang, type Lang } from '@/lib/languages';
+import { isAutoLang, type Lang } from '@/lib/languages';
 import type { TranscriptionResult } from '@/lib/types';
 import type { SpeechModel } from './models';
 
@@ -56,7 +56,8 @@ export async function transcribeWithFallback(
   const firstMs = Math.round(performance.now() - t0);
   if (forced || result.text === '') return { result, firstMs };
 
-  const unsupported = !isLang(result.language);
+  // Auto mode is Korean ↔ English only: Nepali, Hindi, Japanese... are retried as Korean.
+  const unsupported = !isAutoLang(result.language);
   // Only the failure seen in practice (Korean heard as English): checking every disagreement
   // would also turn a correct "네." after an English line into "Yes.".
   const doubted =

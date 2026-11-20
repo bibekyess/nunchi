@@ -126,3 +126,28 @@ test('the empty-state microphone starts listening too', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Pause' })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Stop' }).click();
 });
+
+test('language menu: switch to Nepali → English', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByText('Servers ready')).toBeVisible();
+  await page.getByRole('button', { name: 'New session' }).click();
+  await expect(page).toHaveURL(/\/session\/[0-9a-f-]{36}$/);
+
+  const trigger = page.getByTestId('language-menu');
+  await expect(trigger).toHaveAccessibleName(/한국어 ⇄ English/);
+  await trigger.click();
+  const menu = page.getByRole('menu', { name: 'Translation direction' });
+  await expect(menu.getByRole('menuitemradio', { checked: true })).toContainText(
+    'Detects who is speaking',
+  );
+  await page.screenshot({ path: 'test-results/language-menu.png' });
+
+  await menu.getByRole('menuitemradio', { name: /Nepali to English/ }).click();
+  await expect(menu).toBeHidden();
+  await expect(trigger).toHaveAccessibleName(/नेपाली → English/);
+
+  // The view filter now offers this session's languages only.
+  const options = page.getByTestId('view-filter').locator('option');
+  await expect(options).toHaveText(['All languages', 'नेपाली', 'English']);
+  await page.screenshot({ path: 'test-results/language-menu-nepali.png' });
+});

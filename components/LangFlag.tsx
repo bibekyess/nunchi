@@ -40,7 +40,32 @@ function FlagUS() {
   );
 }
 
-const FLAGS: Partial<Record<Lang, () => React.ReactElement>> = { ko: FlagKR, en: FlagUS };
+/** Nepal's double pennant: crimson with a blue border, moon above and sun below. */
+function FlagNP() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden>
+      <rect width="20" height="20" fill="#fff" />
+      <path
+        d="M5 1.5L15.5 9.25H9.75L15.5 18.5H5z"
+        fill="#dc143c"
+        stroke="#003893"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+      <g fill="#fff">
+        <path d="M6.6 6.1a1.5 1.5 0 0 0 2.8 0a1.4 1.4 0 0 1-2.8 0z" />
+        <circle cx="8" cy="7.1" r="0.85" />
+        <circle cx="8" cy="14.2" r="1.6" />
+      </g>
+    </svg>
+  );
+}
+
+const FLAGS: Partial<Record<Lang, () => React.ReactElement>> = {
+  ko: FlagKR,
+  en: FlagUS,
+  ne: FlagNP,
+};
 
 /** A round flag for a language; languages without a flag show their code. */
 export function LangFlag({ lang, className }: { lang: Lang; className?: string }) {
