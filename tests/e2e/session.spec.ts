@@ -137,7 +137,9 @@ test('language menu: switch to Nepali → English', async ({ page }) => {
   await expect(trigger).toHaveAccessibleName(/한국어 ⇄ English/);
   await trigger.click();
   const menu = page.getByRole('menu', { name: 'Translation direction' });
-  await expect(menu.getByRole('menuitemradio', { checked: true })).toContainText('Detects who is speaking');
+  await expect(menu.getByRole('menuitemradio', { checked: true })).toContainText(
+    'Detects who is speaking',
+  );
   await page.screenshot({ path: 'test-results/language-menu.png' });
 
   await menu.getByRole('menuitemradio', { name: /Nepali to English/ }).click();
