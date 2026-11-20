@@ -1,28 +1,39 @@
 'use client';
 
 import { ChevronDown } from 'lucide-react';
-import { LANG_CODES, SUPPORTED_LANGS } from '@/lib/languages';
+import { useEffect } from 'react';
+import { AUTO_PAIR, SUPPORTED_LANGS } from '@/lib/languages';
 import type { ViewLang } from '@/lib/display/view';
 import { useDisplayStore } from '@/lib/display/store';
+import { modeLangs } from '@/lib/pipeline/direction';
+import { useSessionStore } from '@/lib/session/store';
 import { LangFlag } from '../LangFlag';
 import { cx, SELECT_PILL } from '../ui';
-
-const OPTIONS: { id: ViewLang; label: string }[] = [
-  { id: 'all', label: 'All languages' },
-  ...LANG_CODES.map((l) => ({ id: l, label: SUPPORTED_LANGS[l].nativeName })),
-];
 
 /** Cuckoo's "All languages" pill: shows every line, or only the lines in one language. */
 export function ViewFilterMenu() {
   const view = useDisplayStore((s) => s.view);
   const setView = useDisplayStore((s) => s.setView);
-  const label = OPTIONS.find((o) => o.id === view)?.label ?? OPTIONS[0].label;
+  const mode = useSessionStore((s) => s.session?.mode);
+  // Only this session's two languages: a Nepali session offers नेपाली and English.
+  const langs = mode ? modeLangs(mode) : [...AUTO_PAIR];
+  const options: { id: ViewLang; label: string }[] = [
+    { id: 'all', label: 'All languages' },
+    ...langs.map((l) => ({ id: l, label: SUPPORTED_LANGS[l].nativeName })),
+  ];
+  const known = options.some((o) => o.id === view);
+  const label = options.find((o) => o.id === view)?.label ?? options[0].label;
+
+  // A filter for a language this session doesn't use would hide every line: show them all.
+  useEffect(() => {
+    if (mode && !known) setView('all');
+  }, [mode, known, setView]);
 
   return (
     <label className={cx(SELECT_PILL, 'pr-3 pl-2')}>
       <span className="flex shrink-0" aria-hidden>
         {view === 'all' ? (
-          LANG_CODES.map((l, i) => (
+          langs.map((l, i) => (
             <LangFlag
               key={l}
               lang={l}
@@ -39,7 +50,7 @@ export function ViewFilterMenu() {
         onChange={(e) => setView(e.target.value as ViewLang)}
         data-testid="view-filter"
       >
-        {OPTIONS.map((o) => (
+        {options.map((o) => (
           <option key={o.id} value={o.id}>
             {o.label}
           </option>

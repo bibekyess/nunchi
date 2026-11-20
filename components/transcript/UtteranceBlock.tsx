@@ -3,7 +3,8 @@
 import { CircleAlert, Check, Copy, RotateCw } from 'lucide-react';
 import { memo, useEffect, useRef, useState, type AnimationEvent, type MouseEvent } from 'react';
 import { visibleParts } from '@/lib/display/view';
-import { LANG_CODES, type Lang } from '@/lib/languages';
+import type { Lang } from '@/lib/languages';
+import { modeLangs } from '@/lib/pipeline/direction';
 import { selectColumns, useDisplayStore } from '@/lib/display/store';
 import { useSessionStore } from '@/lib/session/store';
 import { useController } from '../session/controller-context';
@@ -15,10 +16,13 @@ function placeholderWidth(durationMs: number) {
   return `${Math.min(100, 25 + durationMs / 150)}%`;
 }
 
-/** Side-by-side: each language keeps its own column (static class names for Tailwind). */
+/**
+ * Side-by-side: each of the session's two languages keeps its own column (static class names
+ * for Tailwind). A line in another language (the mode changed mid-session) keeps its role.
+ */
 const COLUMN_CLASS = ['md:col-start-1', 'md:col-start-2'];
-function columnOf(lang: Lang | undefined, fallback: number) {
-  const i = lang ? LANG_CODES.indexOf(lang) : -1;
+function columnOf(langs: readonly Lang[], lang: Lang | undefined, fallback: number) {
+  const i = lang ? langs.indexOf(lang) : -1;
   return COLUMN_CLASS[i === 0 || i === 1 ? i : fallback];
 }
 
@@ -86,6 +90,8 @@ export const UtteranceBlock = memo(function UtteranceBlock({
   const controller = useController();
   const view = useDisplayStore((s) => s.view);
   const columns = useDisplayStore(selectColumns);
+  const mode = useSessionStore((s) => s.session?.mode);
+  const langs = mode ? modeLangs(mode) : [];
   const [selected, setSelected] = useState(false);
   const block = useRef<HTMLDivElement>(null);
   // The copy row adds height: keep it clear of the dock (the scroller's scroll-padding).
@@ -190,14 +196,14 @@ export const UtteranceBlock = memo(function UtteranceBlock({
     single ? 'translation-text' : 'source-text',
     single && !settling ? 'text-ink' : 'text-ink-muted',
     columns && 'md:row-start-1',
-    columns && columnOf(u.sourceLang, 0),
+    columns && columnOf(langs, u.sourceLang, 0),
   );
   const translationClass = cx(
     'translation-text transition-colors duration-500 ease-out',
     settling ? 'text-ink-muted' : 'text-ink',
     !single && 'mt-1',
     columns && 'md:row-start-1 md:mt-0',
-    columns && columnOf(u.targetLang, 1),
+    columns && columnOf(langs, u.targetLang, 1),
   );
   const copyText = `${u.sourceText ?? ''}\n${u.translation ?? ''}`.trim();
 

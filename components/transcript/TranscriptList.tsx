@@ -2,7 +2,9 @@
 
 import { ArrowDown, Mic } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { LANG_CODES, SUPPORTED_LANGS } from '@/lib/languages';
+import { SUPPORTED_LANGS } from '@/lib/languages';
+import { modeLangs } from '@/lib/pipeline/direction';
+import type { TranslationMode } from '@/lib/types';
 import { selectColumns, useDisplayStore } from '@/lib/display/store';
 import { useSessionStore, type RecorderState } from '@/lib/session/store';
 import { LangFlag } from '../LangFlag';
@@ -131,9 +133,11 @@ function LiveLine({ text }: { text: string }) {
  * the scroller's padding edge, which already clears the top bar (--top-inset).
  */
 function ColumnHeaders() {
+  const mode = useSessionStore((s) => s.session?.mode);
+  if (!mode) return null;
   return (
     <div className="sticky top-0 z-[1] mb-1 hidden grid-cols-2 gap-6 rounded-2xl border border-line bg-surface px-3 py-2 text-sm font-medium text-ink-muted shadow-sm md:grid">
-      {LANG_CODES.slice(0, 2).map((l) => (
+      {modeLangs(mode).map((l) => (
         <span key={l} className="flex items-center gap-2">
           <LangFlag lang={l} />
           {SUPPORTED_LANGS[l].nativeName}
@@ -146,7 +150,17 @@ function ColumnHeaders() {
 /** Bar heights for the listening waveform (they also read well when motion is reduced). */
 const WAVE = [0.45, 0.8, 1, 0.65, 0.9, 0.5, 0.7];
 
+/** "Korean is translated to English and English to Korean." for the current mode. */
+function directionSentence(mode: TranslationMode | undefined): string {
+  if (!mode) return '';
+  const [a, b] = modeLangs(mode).map((l) => SUPPORTED_LANGS[l].name);
+  return mode.source === 'auto'
+    ? `${a} is translated to ${b} and ${b} to ${a}.`
+    : `${a} is translated to ${b}.`;
+}
+
 function EmptyState({ recorder, onStart }: { recorder: RecorderState; onStart: () => void }) {
+  const mode = useSessionStore((s) => s.session?.mode);
   const recording = recorder === 'listening';
   const paused = recorder === 'paused';
   return (
@@ -189,8 +203,7 @@ function EmptyState({ recorder, onStart }: { recorder: RecorderState; onStart: (
             {paused ? 'Tap the microphone to resume' : 'Tap the microphone to start'}
           </p>
           <p className="mt-1.5 max-w-xs text-sm text-ink-muted">
-            Place the phone where it can hear the room. Korean is translated to English and English
-            to Korean.
+            Place the phone where it can hear the room. {directionSentence(mode)}
           </p>
         </>
       )}

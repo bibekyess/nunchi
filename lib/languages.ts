@@ -3,11 +3,20 @@
 export const SUPPORTED_LANGS = {
   ko: { name: 'Korean', nativeName: '한국어', whisperNames: ['korean'] },
   en: { name: 'English', nativeName: 'English', whisperNames: ['english'] },
+  ne: { name: 'Nepali', nativeName: 'नेपाली', whisperNames: ['nepali'] },
 } as const;
 
 export type Lang = keyof typeof SUPPORTED_LANGS;
 
 export const LANG_CODES = Object.keys(SUPPORTED_LANGS) as [Lang, ...Lang[]];
+
+/** The pair auto mode translates between; other languages are only offered one-way. */
+export const AUTO_PAIR: readonly [Lang, Lang] = ['ko', 'en'];
+
+/** Whether auto mode can take a detected language as is (otherwise it is retried as Korean). */
+export function isAutoLang(value: unknown): value is Lang {
+  return AUTO_PAIR.some((l) => l === value);
+}
 
 export function isLang(value: unknown): value is Lang {
   return typeof value === 'string' && value in SUPPORTED_LANGS;

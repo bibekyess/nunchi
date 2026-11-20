@@ -164,6 +164,22 @@ describe('transcribeWithFallback', () => {
     expect(transcribe.mock.calls[1][1]).toMatchObject({ language: 'ko', prompt: '지민.' });
   });
 
+  it('auto mode retries Nepali in Korean too (auto is Korean ↔ English only)', async () => {
+    const { speech, transcribe } = fakeSpeech(result('नमस्ते', 'ne'), result('네.', undefined));
+    const out = await transcribeWithFallback(speech, wav, { language: 'auto' });
+    expect(transcribe.mock.calls[1][1]).toMatchObject({ language: 'ko' });
+    expect(out.fallback).toBe('unsupported');
+  });
+
+  it('a Nepali mode forces Nepali and never falls back', async () => {
+    const first = result('नमस्ते', 'hi');
+    const { speech, transcribe } = fakeSpeech(first);
+    const out = await transcribeWithFallback(speech, wav, { language: 'ne' });
+    expect(out.result).toBe(first);
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    expect(transcribe.mock.calls[0][1]).toMatchObject({ language: 'ne' });
+  });
+
   describe('with a hint from the previous line', () => {
     const scored = (text: string, language: string, avgLogprob: number): TranscriptionResult => ({
       ...result(text, language),
