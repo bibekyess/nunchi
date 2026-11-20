@@ -137,4 +137,21 @@ describe('SpeechRecorder speech so far', () => {
     expect(recorder.speechSoFar()).toBeNull();
     await recorder.destroy();
   });
+
+  it('forgets the lead-in from before a pause', async () => {
+    const recorder = await SpeechRecorder.create({} as MediaStream, DEFAULT_VAD_SETTINGS, {
+      onClip: vi.fn(),
+    });
+    const frame = (v: number) => new Float32Array(512).fill(v);
+    const onFrame = fake.state.options!.onFrameProcessed;
+    for (let i = 0; i < 20; i++) onFrame({ isSpeech: 0.1 }, frame(0.5)); // before the pause
+    const pausing = recorder.pause();
+    fake.state.pauses.splice(0).forEach((release) => release());
+    await pausing;
+
+    fake.state.options!.onSpeechStart();
+    onFrame({ isSpeech: 0.9 }, frame(1));
+    expect(Array.from(recorder.speechSoFar()!).every((v) => v === 1)).toBe(true);
+    await recorder.destroy();
+  });
 });

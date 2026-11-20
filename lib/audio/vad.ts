@@ -90,6 +90,7 @@ export class SpeechRecorder {
   async pause() {
     this.listening = false;
     this.clearSplitTimer();
+    this.preRoll = []; // audio from before the pause must not lead the next draft
     await this.vad?.pause();
     this.callbacks.onLevel?.(0);
   }
@@ -97,6 +98,7 @@ export class SpeechRecorder {
   async destroy() {
     this.listening = false;
     this.clearSplitTimer();
+    this.preRoll = [];
     try {
       await this.vad?.destroy();
     } catch {

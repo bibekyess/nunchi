@@ -128,6 +128,30 @@ describe('PipelineQueue', () => {
     expect(state().byId[id].draft).toBeUndefined();
   });
 
+  it('drops the draft of a line whose transcription failed', async () => {
+    const transcribe = vi.fn(async () => {
+      throw new ApiError(400, 'bad_request', 'Bad audio.');
+    });
+    const q = new PipelineQueue(makeDeps({ transcribe }));
+    const id = q.enqueue(clip(), '안녕하세');
+    await flush();
+    expect(state().byId[id].status).toBe('error');
+    expect(state().byId[id].draft).toBeUndefined();
+  });
+
+  it('counts only transcriptions still running, not failed lines kept for retry', async () => {
+    const transcribe = vi.fn(async () => {
+      throw new ApiError(400, 'bad_request', 'Bad audio.');
+    });
+    const q = new PipelineQueue(makeDeps({ transcribe }));
+    q.enqueue(clip());
+    expect(q.activeTranscriptions).toBe(1);
+    q.enqueue(clip());
+    await flush();
+    expect(q.pendingClips).toBe(2); // audio kept for a retry
+    expect(q.activeTranscriptions).toBe(0);
+  });
+
   it('keeps speech order when responses arrive out of order', async () => {
     const first = deferred<TranscriptionResult>();
     const second = deferred<TranscriptionResult>();

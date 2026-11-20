@@ -58,7 +58,7 @@ export class SessionController {
       canRun: () =>
         this.livePreviewEnabled &&
         (!getEngines().speech.needsNetwork || navigator.onLine) &&
-        this.queue.pendingClips < CONCURRENCY,
+        this.queue.activeTranscriptions < CONCURRENCY,
       onDraft: (text) => this.store.setLiveDraft(text),
     });
     document.addEventListener('visibilitychange', this.onVisibility);

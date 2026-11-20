@@ -62,6 +62,11 @@ export class PipelineQueue {
     return this.clips.size;
   }
 
+  /** Transcriptions running or waiting (for the network or a slot); failed lines don't count. */
+  get activeTranscriptions() {
+    return this.jobs.size;
+  }
+
   /**
    * Adds a clip as a new utterance and starts its job. `draft` is what the live preview heard
    * while it was spoken, shown until the real transcription. Returns its id ('' once disposed).
@@ -153,7 +158,7 @@ export class PipelineQueue {
       this.deps.getState().setNeedsAccessToken(true);
     }
     const message = err instanceof EngineError ? err.message : 'Something went wrong';
-    this.patch(id, { status: 'error', error: message });
+    this.patch(id, { status: 'error', error: message, draft: undefined });
   }
 
   /**
