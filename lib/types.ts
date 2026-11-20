@@ -18,6 +18,8 @@ export interface Utterance {
   durationMs: number;
   sourceLang?: Lang; // detected by Whisper
   sourceText?: string;
+  /** What the live preview heard while the line was spoken; shown until `sourceText` lands. */
+  draft?: string;
   targetLang?: Lang;
   translation?: string; // grows while streaming
   status: UtteranceStatus;

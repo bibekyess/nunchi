@@ -114,3 +114,27 @@ describe('SpeechRecorder split at a pause', () => {
     await recorder.destroy();
   });
 });
+
+describe('SpeechRecorder speech so far', () => {
+  it('collects the frames of the speech in progress, with a little lead-in', async () => {
+    const recorder = await SpeechRecorder.create({} as MediaStream, DEFAULT_VAD_SETTINGS, {
+      onClip: vi.fn(),
+    });
+    const frame = (v: number) => new Float32Array(512).fill(v); // 32 ms each
+    const onFrame = fake.state.options!.onFrameProcessed;
+    for (let i = 0; i < 20; i++) onFrame({ isSpeech: 0.1 }, frame(0)); // 640 ms of silence
+    expect(recorder.speechSoFar()).toBeNull();
+
+    fake.state.options!.onSpeechStart();
+    for (let i = 0; i < 5; i++) onFrame({ isSpeech: 0.9 }, frame(1));
+    const audio = recorder.speechSoFar()!;
+    const lead = audio.length - 5 * 512;
+    expect(lead).toBeGreaterThan(0);
+    expect(lead).toBeLessThanOrEqual(11 * 512); // about the 300 ms pre-speech pad
+    expect(audio.at(-1)).toBe(1);
+
+    fake.state.options!.onSpeechEnd(new Float32Array(16_000));
+    expect(recorder.speechSoFar()).toBeNull();
+    await recorder.destroy();
+  });
+});

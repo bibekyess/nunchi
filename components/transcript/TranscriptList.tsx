@@ -8,6 +8,7 @@ import { useSessionStore, type RecorderState } from '@/lib/session/store';
 import { LangFlag } from '../LangFlag';
 import { startOrResume, useController } from '../session/controller-context';
 import { cx } from '../ui';
+import { DraftText } from './DraftText';
 import { UtteranceBlock } from './UtteranceBlock';
 
 /** Within this many px of the bottom counts as "at the bottom". */
@@ -21,8 +22,11 @@ export function TranscriptList() {
   // Any text change (streaming translation) should keep us pinned to the bottom.
   const lastText = useSessionStore((s) => {
     const last = s.ids.at(-1);
-    return last ? `${s.byId[last].status}:${s.byId[last].translation?.length ?? 0}` : '';
+    const u = last ? s.byId[last] : undefined;
+    return u ? `${u.status}:${u.draft?.length ?? 0}:${u.translation?.length ?? 0}` : '';
   });
+  // The words of the line being spoken right now, before the pause that ends it.
+  const liveDraft = useSessionStore((s) => (s.speaking ? s.liveDraft : ''));
   const recorder = useSessionStore((s) => s.recorder);
   const controller = useController();
   const textSize = useDisplayStore((s) => s.textSize);
@@ -50,7 +54,7 @@ export function TranscriptList() {
 
   useLayoutEffect(() => {
     if (followingRef.current) scrollToBottom();
-  }, [ids.length, lastText, textSize, columns, scrollToBottom]);
+  }, [ids.length, lastText, liveDraft, textSize, columns, scrollToBottom]);
 
   // Keep following when the scroller's content box resizes: the viewport (mobile keyboard,
   // rotation) or --top-inset growing as a banner appears (more padding, smaller content box).
@@ -74,7 +78,7 @@ export function TranscriptList() {
         data-size={textSize}
         data-layout={columns ? 'columns' : 'stacked'}
       >
-        {visibleCount === 0 ? (
+        {visibleCount === 0 && !liveDraft ? (
           <EmptyState recorder={recorder} onStart={() => startOrResume(controller, recorder)} />
         ) : (
           <div
@@ -87,6 +91,7 @@ export function TranscriptList() {
             {ids.map((id) => (
               <UtteranceBlock key={id} id={id} animate={!initialIds.has(id)} />
             ))}
+            {liveDraft && <LiveLine text={liveDraft} />}
           </div>
         )}
       </div>
@@ -107,6 +112,16 @@ export function TranscriptList() {
         <ArrowDown className="h-4 w-4" aria-hidden />
         Latest
       </button>
+    </div>
+  );
+}
+
+/** The line being spoken, drafted live. Its row replaces it in place when the speaker pauses. */
+function LiveLine({ text }: { text: string }) {
+  const single = useDisplayStore((s) => s.view !== 'all');
+  return (
+    <div className="animate-fade-in rounded-2xl px-3 py-3" data-status="live">
+      <DraftText text={text} className={single ? 'translation-text' : 'source-text'} />
     </div>
   );
 }

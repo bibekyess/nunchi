@@ -1,5 +1,5 @@
 import type { MicVAD } from '@ricky0123/vad-web';
-import { toMicVadOptions, type VadSettings } from './vad-settings';
+import { PRE_SPEECH_PAD_MS, toMicVadOptions, type VadSettings } from './vad-settings';
 import { frameLevel, samplesToMs } from './wav';
 
 const ASSET_PATH = '/vad/';
@@ -36,6 +36,10 @@ export class SpeechRecorder {
   /** Speech probability below which a frame counts as a pause (MicVAD's "speech ended" level). */
   private quietBelow = 0;
   private readonly t0 = performance.now();
+  /** The last few frames before speech starts, so a draft keeps the first syllable. */
+  private preRoll: Float32Array[] = [];
+  /** Frames of the speech in progress (pre-roll included), for live drafts. */
+  private speechFrames: Float32Array[] = [];
 
   private constructor(private readonly callbacks: SpeechRecorderCallbacks) {}
 
@@ -106,14 +110,42 @@ export class SpeechRecorder {
     return performance.now() - this.t0;
   }
 
+  /** The audio of the speech in progress (16 kHz mono), or null between lines. */
+  speechSoFar(): Float32Array | null {
+    if (this.speechStartedAt === null || this.speechFrames.length === 0) return null;
+    const length = this.speechFrames.reduce((n, f) => n + f.length, 0);
+    const out = new Float32Array(length);
+    let offset = 0;
+    for (const f of this.speechFrames) {
+      out.set(f, offset);
+      offset += f.length;
+    }
+    return out;
+  }
+
   private handleFrame(probs: { isSpeech: number }, frame: Float32Array) {
     this.callbacks.onLevel?.(frameLevel(frame));
+    // MicVAD may reuse its buffer; keep a copy.
+    if (this.speechStartedAt !== null) {
+      this.speechFrames.push(frame.slice());
+    } else {
+      this.preRoll.push(frame.slice());
+      let ms = this.preRoll.reduce((n, f) => n + samplesToMs(f.length), 0);
+      while (
+        this.preRoll.length > 1 &&
+        ms - samplesToMs(this.preRoll[0].length) >= PRE_SPEECH_PAD_MS
+      ) {
+        ms -= samplesToMs(this.preRoll.shift()!.length);
+      }
+    }
     if (this.speechStartedAt === null || probs.isSpeech >= this.quietBelow) return;
     if (this.now() - this.speechStartedAt >= SPLIT_AT_PAUSE_MS) void this.forceSplit();
   }
 
   private handleSpeechStart() {
     this.speechStartedAt = this.now();
+    this.speechFrames = this.preRoll;
+    this.preRoll = [];
     this.callbacks.onSpeaking?.(true);
     this.clearSplitTimer();
     this.splitTimer = setTimeout(() => void this.forceSplit(), MAX_UTTERANCE_MS);
@@ -122,6 +154,7 @@ export class SpeechRecorder {
   private handleSpeechStop() {
     this.clearSplitTimer();
     this.speechStartedAt = null;
+    this.speechFrames = [];
     this.callbacks.onSpeaking?.(false);
   }
 

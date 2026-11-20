@@ -13,15 +13,18 @@ export interface VadSettings {
   minSpeechMs: number;
   /** Transcribe two lines again as one when a pause seems to have cut a word in two. */
   rejoin: boolean;
+  /** Show a draft of each line while it is still being spoken (extra speech-to-text calls). */
+  livePreview: boolean;
 }
 
-type SliderSetting = Exclude<keyof VadSettings, 'rejoin'>;
+type SliderSetting = Exclude<keyof VadSettings, 'rejoin' | 'livePreview'>;
 
 export const DEFAULT_VAD_SETTINGS: VadSettings = {
   redemptionMs: 600, // Korean speakers pause mid-sentence
   speechThreshold: 0.5,
   minSpeechMs: 400, // "네." still passes
   rejoin: true,
+  livePreview: true,
 };
 
 export const VAD_LIMITS = {
@@ -55,6 +58,7 @@ export function normalizeVadSettings(raw: unknown): VadSettings {
     if (v !== null) out[key] = v;
   }
   if (typeof obj.rejoin === 'boolean') out.rejoin = obj.rejoin;
+  if (typeof obj.livePreview === 'boolean') out.livePreview = obj.livePreview;
   return out;
 }
 

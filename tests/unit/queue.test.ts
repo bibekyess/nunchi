@@ -111,6 +111,23 @@ describe('PipelineQueue', () => {
     );
   });
 
+  it('shows the live draft until the transcription replaces it', async () => {
+    const pending = deferred<TranscriptionResult>();
+    const deps = makeDeps({ transcribe: vi.fn(() => pending.promise) });
+    const q = new PipelineQueue(deps);
+    const id = q.enqueue(clip(), '안녕하세');
+    expect(state().byId[id]).toMatchObject({ status: 'transcribing', draft: '안녕하세' });
+    q.showDraft(id, '안녕하세요'); // a later draft that was still on its way
+    expect(state().byId[id].draft).toBe('안녕하세요');
+
+    pending.resolve(tr('안녕하세요.'));
+    await flush();
+    expect(state().byId[id]).toMatchObject({ status: 'done', sourceText: '안녕하세요.' });
+    expect(state().byId[id].draft).toBeUndefined();
+    q.showDraft(id, 'late'); // too late: the line is final
+    expect(state().byId[id].draft).toBeUndefined();
+  });
+
   it('keeps speech order when responses arrive out of order', async () => {
     const first = deferred<TranscriptionResult>();
     const second = deferred<TranscriptionResult>();

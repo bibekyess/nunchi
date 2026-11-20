@@ -292,6 +292,13 @@ export function AudioSettingsDialog({ open, onClose }: { open: boolean; onClose:
           label="Rejoin words cut by a pause"
           description="Turn off if lines get rewritten wrongly."
         />
+        <Switch
+          className="mt-4"
+          checked={vad.livePreview}
+          onChange={(livePreview) => updateVad({ livePreview })}
+          label="Show words as they are spoken"
+          description="A faint draft appears while someone talks. Turn off to save server load."
+        />
         <Button
           variant="ghost"
           size="sm"

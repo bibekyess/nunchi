@@ -2,6 +2,26 @@
 
 Changes to, or details not covered by, the implementation plan. Newest first.
 
+## 2026-11-20 — Live drafts while someone speaks
+
+- **The words show up while they're spoken, not after the pause.** While the speech detector
+  hears speech, the speech in progress (plus the 300 ms lead-in) is sent to the chosen speech
+  engine about once a second (`lib/pipeline/live-preview.ts`). The reply types out faintly at
+  the bottom of the transcript with a caret. When the pause ends the line, its row takes the
+  draft's place (no slide-in, no fade), so there is no shimmer placeholder in between; the
+  final transcription replaces the draft.
+- **Provisional text is lighter.** Drafts use `ink-faint`; while the translation streams, the
+  line uses `ink-muted`, and both settle into their normal colors (500 ms color transition)
+  when the line is done.
+- **Drafts are extra load, so they back off.** One request at a time, only past 0.7 s of audio,
+  skipped offline and while real clips wait to be transcribed (≥ 2 pending). Failures and
+  filler are ignored: a draft never shows an error. Off switch: Audio settings → "Show words as
+  they are spoken". Drafts are hidden from screen readers (the finished line is announced) and
+  aren't kept after a reload.
+- **Cost:** each round re-sends the whole speech so far (Whisper has no incremental mode), so a
+  25 s monologue costs ~25 short requests. Acceptable for one meeting; revisit if the GPU box
+  serves many sessions at once.
+
 ## 2026-10-30 — Short clips heard as English; rejoin narrowed
 
 After the rejoin change, Korean speech sometimes showed up as English text. The server logs
